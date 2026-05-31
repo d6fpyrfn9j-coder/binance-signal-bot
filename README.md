@@ -17,6 +17,7 @@ Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini
 - BTC 4H bearish/zayif ise altcoinlerde karar otomatik `BTC 4H ZAYIF - BEKLE` olur.
 - BTC 15M/1H/4H zayiflama, 5M/1H para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
 - Duzeltme geldiginde para USDT'de mi bekliyor, sektor icinde mi donuyor, baska projeye mi kayiyor ayirmaya calisir.
+- Anlik para akisini Binance taker alis-satis farkindan yaklasik USDT net baski olarak yazar; kucuk miktarlari `zayif/cok zayif` diye etiketler.
 - Altcoin secimi anlik 5M Binance USDT hacmi + 5M fiyat degisimine gore yapilir; 1H teyit olarak raporda gosterilir.
 - Destek/direnc seviyelerini onceki swing high/low uzerinden belirler; son mum kirilim yaptiysa bunu daha net yakalar.
 - Riskli durumlarda uyari verir:
@@ -186,7 +187,7 @@ Actions > Binance Signal Bot > Run workflow
 KRIPTO RAPORU
 2026-05-31 00:15:00 CEST
 Cokus erken uyari ⚠️ BTC 15M zayif | 5M para cikisi -0.3% | hacimli satis
-Anlık Akış: AI önde
+5M Net Akış: Layer 1 +420K$ | küçük (ETH +310K$)
 Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor
 
 BTCUSDT
@@ -196,7 +197,7 @@ Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek
 Zincir: Binance net çıkış -1.2K BTC ✅
 İz: Alıcı %56 | OB alış duvarı
 Yükseliş sinyali var 🟢
-5M: +0.2% | 1H: -0.2%
+5M Akış: +82K$ zayıf | 1H -0.2%
 15M: TOPARLANMA 🟢 | Güç +3 | RSI 44 | ERKEN TAKİP
 1H: NÖTR 🟡 | Güç +1 | RSI 55 | İZLE
 4H: ZAYIFLAMA 🔴 | Güç -3 | RSI 43 | BEKLE
@@ -210,6 +211,7 @@ Fiyat: 2024
 Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük
 Zincir: Binance net giriş +8.4K ETH ⚠️
 İz: Satıcı %57 | Dağıtım riski | Fake YÜKSEK ⚠️
+5M Akış: -36K$ zayıf | 1H -0.4%
 15M: NÖTR 🟡 | Güç +1 | RSI 44 | ALIM BÖLGESİ
 1H: TOPARLANMA 🟢 | Güç +3 | RSI 53 | ERKEN TAKİP
 4H: NÖTR 🟡 | Güç +0 | RSI 46 | İZLE
@@ -221,5 +223,5 @@ Alarm: Yok
 - Binance public API kullanildigi icin API key gerekmez.
 - Telegram icin BotFather'dan bot token alman gerekir.
 - Chat ID icin kendi Telegram hesabina veya gruba botu ekleyip chat id kullanmalisin.
-- Akış satiri bazen `Anlık Akış`, bazen `para sektor icinde donuyor`, bazen de `onceki para ... tarafinda` diye gelir.
+- Akış satiri `5M Net Akış`, `1H Akış` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.
 - `market_bot.py` onceki kisa piyasa yonu ve piyasa akisi yardimci aracidir; yeni moduler botun ana girisi `main.py` dosyasidir.

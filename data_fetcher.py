@@ -38,6 +38,9 @@ class MarketStat:
     price_change_pct: float
     quote_volume: float
     last_price: float
+    taker_buy_quote_volume: float = 0.0
+    taker_sell_quote_volume: float = 0.0
+    net_taker_quote_volume: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -144,11 +147,16 @@ def fetch_recent_flow_stats(symbols: tuple[str, ...], interval: str = "1h") -> d
         current = candles[-1]
         change_pct = ((current.close - previous.close) / previous.close) * 100 if previous.close else 0.0
         quote_volume = current.quote_volume or current.close * current.volume
+        taker_buy_quote = current.taker_buy_quote_volume
+        taker_sell_quote = max(quote_volume - taker_buy_quote, 0.0)
         stats[symbol] = MarketStat(
             symbol=symbol,
             price_change_pct=change_pct,
             quote_volume=quote_volume,
             last_price=current.close,
+            taker_buy_quote_volume=taker_buy_quote,
+            taker_sell_quote_volume=taker_sell_quote,
+            net_taker_quote_volume=taker_buy_quote - taker_sell_quote,
         )
     return stats
 

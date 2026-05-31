@@ -484,6 +484,81 @@ def _fmt_amount(value: float | None, suffix: str = "") -> str:
     return f"{sign}{number}{suffix}"
 
 
+def _flow_pressure_usd(stat: MarketStat | None) -> float | None:
+    if not stat:
+        return None
+    if stat.net_taker_quote_volume:
+        return stat.net_taker_quote_volume
+    return stat.quote_volume * (stat.price_change_pct / 100)
+
+
+def _flow_strength(value: float | None) -> str:
+    if value is None:
+        return "belirsiz"
+    absolute = abs(value)
+    if absolute < 25_000:
+        return "çok zayıf"
+    if absolute < 100_000:
+        return "zayıf"
+    if absolute < 500_000:
+        return "küçük"
+    if absolute < 2_000_000:
+        return "orta"
+    return "güçlü"
+
+
+def _sector_flow_amounts(
+    stats: dict[str, MarketStat] | None,
+    sectors: dict[str, str] | None,
+) -> tuple[dict[str, float], dict[str, list[tuple[float, str]]]]:
+    if not stats or not sectors:
+        return {}, {}
+
+    amounts: dict[str, float] = {}
+    symbols: dict[str, list[tuple[float, str]]] = {}
+    for symbol, stat in stats.items():
+        sector = sectors.get(symbol)
+        if not sector:
+            continue
+        amount = _flow_pressure_usd(stat)
+        if amount is None:
+            continue
+        amounts[sector] = amounts.get(sector, 0.0) + amount
+        symbols.setdefault(sector, []).append((amount, symbol))
+    return amounts, symbols
+
+
+def _top_flow_symbol(items: list[tuple[float, str]]) -> str | None:
+    positives = [(amount, symbol) for amount, symbol in items if amount > 0]
+    if not positives:
+        return None
+    amount, symbol = max(positives, key=lambda item: item[0])
+    return f"{symbol.replace('USDT', '')} {_fmt_amount(amount, '$')}"
+
+
+def _symbol_flow_line(
+    symbol: str,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+) -> str | None:
+    flow = flow_stats.get(symbol) if flow_stats else None
+    confirm = confirm_stats.get(symbol) if confirm_stats else None
+    if not flow and not confirm:
+        return None
+
+    if flow:
+        amount = _flow_pressure_usd(flow)
+        text = f"5M Akış: {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
+        if confirm:
+            text += f" | 1H {confirm.price_change_pct:+.1f}%"
+        return text
+
+    if confirm:
+        amount = _flow_pressure_usd(confirm)
+        return f"1H Akış: {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
+    return None
+
+
 def _cost_for(symbol: str, costs: dict[str, float] | None) -> float | None:
     if not costs:
         return None
@@ -869,43 +944,45 @@ def _flow_summary(
     if not sectors:
         return None
 
-    instant_scores: dict[str, float] = {}
-    confirm_scores: dict[str, float] = {}
-    daily_scores: dict[str, float] = {}
-    for symbol_analysis in analyses:
-        symbol = symbol_analysis.symbol
-        if symbol == "BTCUSDT":
-            continue
-        sector = sectors.get(symbol)
-        if not sector:
-            continue
-        if flow_stats and (stat := flow_stats.get(symbol)):
-            score = stat.quote_volume * max(stat.price_change_pct, -5)
-            instant_scores[sector] = instant_scores.get(sector, 0.0) + score
-        if confirm_stats and (stat := confirm_stats.get(symbol)):
-            score = stat.quote_volume * max(stat.price_change_pct, -5)
-            confirm_scores[sector] = confirm_scores.get(sector, 0.0) + score
-        if market_stats and (stat := market_stats.get(symbol)):
-            score = stat.quote_volume * max(stat.price_change_pct, -5)
-            daily_scores[sector] = daily_scores.get(sector, 0.0) + score
+    instant_amounts, instant_symbols = _sector_flow_amounts(flow_stats, sectors)
+    confirm_amounts, confirm_symbols = _sector_flow_amounts(confirm_stats, sectors)
+    daily_amounts, daily_symbols = _sector_flow_amounts(market_stats, sectors)
 
-    if not instant_scores and not confirm_scores and not daily_scores:
+    if not instant_amounts and not confirm_amounts and not daily_amounts:
         return None
 
-    if instant_scores:
-        instant_leader, instant_score = max(instant_scores.items(), key=lambda item: item[1])
-        if instant_score > 0:
-            return f"Anlık Akış: {instant_leader} önde"
+    if instant_amounts:
+        positive_total = sum(amount for amount in instant_amounts.values() if amount > 0)
+        negative_total = sum(-amount for amount in instant_amounts.values() if amount < 0)
+        total = positive_total - negative_total
+        leader, leader_amount = max(instant_amounts.items(), key=lambda item: item[1])
+        leader_symbol = _top_flow_symbol(instant_symbols.get(leader, []))
 
-    if confirm_scores:
-        confirm_leader, confirm_score = max(confirm_scores.items(), key=lambda item: item[1])
-        if confirm_score > 0:
-            return f"Akış: Anlık net değil, para {confirm_leader} içinde dönüyor"
+        if negative_total > positive_total * 1.25 and total <= -25_000:
+            return f"5M Net Akış: USDT'ye kaçış {_fmt_amount(total, '$')} | {_flow_strength(total)}"
 
-    if daily_scores:
-        daily_leader, daily_score = max(daily_scores.items(), key=lambda item: item[1])
-        if daily_score > 0:
-            return f"Akış: Yeni giriş zayıf, önceki para {daily_leader} tarafında"
+        if leader_amount > 0:
+            suffix = f" ({leader_symbol})" if leader_symbol else ""
+            if abs(leader_amount) < 25_000:
+                return f"5M Net Akış: net zayıf | {leader} {_fmt_amount(leader_amount, '$')} çok zayıf"
+            return f"5M Net Akış: {leader} {_fmt_amount(leader_amount, '$')} | {_flow_strength(leader_amount)}{suffix}"
+
+        if total < 0:
+            return f"5M Net Akış: satış baskısı {_fmt_amount(total, '$')} | {_flow_strength(total)}"
+
+    if confirm_amounts:
+        confirm_leader, confirm_amount = max(confirm_amounts.items(), key=lambda item: item[1])
+        if confirm_amount > 50_000:
+            symbol = _top_flow_symbol(confirm_symbols.get(confirm_leader, []))
+            suffix = f" ({symbol})" if symbol else ""
+            return f"1H Akış: anlık zayıf, para {confirm_leader} içinde {_fmt_amount(confirm_amount, '$')}{suffix}"
+
+    if daily_amounts:
+        daily_leader, daily_amount = max(daily_amounts.items(), key=lambda item: item[1])
+        if daily_amount > 100_000:
+            symbol = _top_flow_symbol(daily_symbols.get(daily_leader, []))
+            suffix = f" ({symbol})" if symbol else ""
+            return f"24s Akış: yeni giriş zayıf, eski para {daily_leader} tarafında{suffix}"
 
     return "Akış: Net güçlü sektör yok"
 
@@ -1049,19 +1126,7 @@ def build_report(
             *([onchain] if (onchain := _onchain_line(onchain_flow)) else []),
             *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book, onchain_flow)) else []),
             *([rise_signal] if rise_signal else []),
-            *(
-                [
-                    f"5M: {flow_stats[symbol_analysis.symbol].price_change_pct:+.1f}% | "
-                    f"1H: {confirm_stats[symbol_analysis.symbol].price_change_pct:+.1f}%"
-                ]
-                if flow_stats and confirm_stats and symbol_analysis.symbol in flow_stats and symbol_analysis.symbol in confirm_stats
-                else []
-            ),
-            *(
-                [f"5M: {flow_stats[symbol_analysis.symbol].price_change_pct:+.1f}%"]
-                if flow_stats and symbol_analysis.symbol in flow_stats and not (confirm_stats and symbol_analysis.symbol in confirm_stats)
-                else []
-            ),
+            *([flow_line] if (flow_line := _symbol_flow_line(symbol_analysis.symbol, flow_stats, confirm_stats)) else []),
             *(
                 [f"24s: {market_stats[symbol_analysis.symbol].price_change_pct:+.1f}%"]
                 if market_stats and symbol_analysis.symbol in market_stats
