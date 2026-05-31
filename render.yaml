@@ -1,0 +1,19 @@
+services:
+  - type: cron
+    name: binance-signal-bot
+    runtime: python
+    region: frankfurt
+    schedule: "*/5 * * * *"
+    buildCommand: "true"
+    startCommand: "python main.py --once"
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: BTCUSDT_COST
+        sync: false
+      - key: ETHUSDT_COST
+        sync: false
+      - key: SOLUSDT_COST
+        sync: false
