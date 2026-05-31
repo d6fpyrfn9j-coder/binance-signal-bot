@@ -163,8 +163,8 @@ def run_once(send_to_telegram: bool = True) -> str:
     logging.info("Report created")
 
     if send_to_telegram:
-        token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-        chat_id = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
+        token = "".join((os.getenv("TELEGRAM_BOT_TOKEN") or "").split())
+        chat_id = "".join((os.getenv("TELEGRAM_CHAT_ID") or "").split())
         if not token or not chat_id:
             raise RuntimeError("TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID .env icinde olmali")
         send_telegram_message(token, chat_id, report)

@@ -9,8 +9,8 @@ import urllib.request
 
 
 def send_telegram_message(token: str, chat_id: str, text: str) -> None:
-    token = token.strip()
-    chat_id = chat_id.strip()
+    token = "".join(token.split())
+    chat_id = "".join(chat_id.split())
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps(
         {
