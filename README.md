@@ -1,8 +1,8 @@
 # Kripto Piyasa Analiz Botu
 
-Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini analiz eder ve Telegram'a rapor gonderir.
+Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini analiz eder ve Telegram'a kisa giris karari gonderir.
 
-> Finansal tavsiye degildir. Bot "al" veya "sat" emri uretmez; sadece analiz ve risk uyarisi verir.
+> Bot borsada islem acmaz; karar raporunu gonderir, islemi kullanici manuel yapar.
 
 ## Ozellikler
 
@@ -10,15 +10,15 @@ Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini
 - `15m`, `1h`, `4h` zaman dilimlerini analiz eder.
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
-- 1H beklenti gucluyse `Pozisyon: KÂR BEKLENTİSİ`, trend zayifsa `Pozisyon: ZARAR RİSKİ` yazar.
+- Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
-- BTC 4H bearish/zayif ise altcoinlerde karar otomatik `BTC 4H ZAYIF - BEKLE` olur.
-- BTC 15M/1H/4H zayiflama, 5M/1H para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
+- BTC ana trendi zayifsa altcoinlerde giris otomatik kapatilir.
+- BTC zayiflama, anlik para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
 - Duzeltme geldiginde para USDT'de mi bekliyor, sektor icinde mi donuyor, baska projeye mi kayiyor ayirmaya calisir.
-- Anlik para akisini Binance taker alis-satis farkindan yaklasik USDT net baski olarak yazar; kucuk miktarlari `zayif/cok zayif` diye etiketler.
-- Altcoin secimi anlik 5M Binance USDT hacmi + 5M fiyat degisimine gore yapilir; 1H teyit olarak raporda gosterilir.
+- Anlik para akisini Binance taker alis/satis hacmi ve net fark olarak yazar; kucuk miktarlari `zayif/cok zayif` diye etiketler.
+- Altcoin secimi anlik Binance USDT hacmi + fiyat degisimine gore yapilir; teyit verisi icerde kullanilir.
 - Destek/direnc seviyelerini onceki swing high/low uzerinden belirler; son mum kirilim yaptiysa bunu daha net yakalar.
 - Riskli durumlarda uyari verir:
   - Asiri RSI
@@ -186,36 +186,31 @@ Actions > Binance Signal Bot > Run workflow
 ```text
 KRIPTO RAPORU
 2026-05-31 00:15:00 CEST
-Cokus erken uyari ⚠️ BTC 15M zayif | 5M para cikisi -0.3% | hacimli satis
-5M Net Akış: Layer 1 +420K$ | küçük (ETH +310K$)
+Cokus erken uyari ⚠️ BTC trend zayif | para cikisi | hacimli satis
+Anlık Net Akış: Layer 1 +420K$ | küçük (ETH +310K$) | Alış 4.2M$ / Satış 3.8M$
 Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor
 
 BTCUSDT
 Sektor: BTC
 Fiyat: 73896
-Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek
+Giriş: EVET 🟢 | zincir destekli
 Zincir: Binance net çıkış -1.2K BTC ✅
 İz: Alıcı %56 | OB alış duvarı
 Yükseliş sinyali var 🟢
-5M Akış: +82K$ zayıf | 1H -0.2%
-15M: TOPARLANMA 🟢 | Güç +3 | RSI 44 | ERKEN TAKİP
-1H: NÖTR 🟡 | Güç +1 | RSI 55 | İZLE
-4H: ZAYIFLAMA 🔴 | Güç -3 | RSI 43 | BEKLE
-4H Destek/Direnç: 72512 / 78080
+Akış: Alış 1.2M$ | Satış 1.1M$ | Net +82K$ zayıf | teyit -0.2%
+Seviye: 72512 / 78080
 Plan: Giriş 72512-73238 | Hedef 78080 | Risk 71425 altı
-Alarm: 15M Mum: Hammer
+Alarm: Mum: Hammer
 
 ETHUSDT
 Sektor: Layer 1
 Fiyat: 2024
-Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük
+Giriş: HAYIR 🔴 | fake/dağıtım riski
 Zincir: Binance net giriş +8.4K ETH ⚠️
 İz: Satıcı %57 | Dağıtım riski | Fake YÜKSEK ⚠️
-5M Akış: -36K$ zayıf | 1H -0.4%
-15M: NÖTR 🟡 | Güç +1 | RSI 44 | ALIM BÖLGESİ
-1H: TOPARLANMA 🟢 | Güç +3 | RSI 53 | ERKEN TAKİP
-4H: NÖTR 🟡 | Güç +0 | RSI 46 | İZLE
-4H Destek/Direnç: 1967 / 2140
+Akış: Alış 830K$ | Satış 866K$ | Net -36K$ zayıf | teyit -0.4%
+Seviye: 1967 / 2140
+Plan: Giriş yok | Destek 1967 | Direnç 2140
 Alarm: Yok
 ```
 ## Notlar
@@ -223,5 +218,5 @@ Alarm: Yok
 - Binance public API kullanildigi icin API key gerekmez.
 - Telegram icin BotFather'dan bot token alman gerekir.
 - Chat ID icin kendi Telegram hesabina veya gruba botu ekleyip chat id kullanmalisin.
-- Akış satiri `5M Net Akış`, `1H Akış` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.
+- Akış satiri `Anlık Net Akış`, `Teyit Akışı` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.
 - `market_bot.py` onceki kisa piyasa yonu ve piyasa akisi yardimci aracidir; yeni moduler botun ana girisi `main.py` dosyasidir.

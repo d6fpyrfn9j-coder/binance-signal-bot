@@ -484,6 +484,12 @@ def _fmt_amount(value: float | None, suffix: str = "") -> str:
     return f"{sign}{number}{suffix}"
 
 
+def _fmt_abs_amount(value: float | None, suffix: str = "") -> str:
+    if value is None:
+        return "?"
+    return _fmt_amount(abs(value), suffix).lstrip("+")
+
+
 def _flow_pressure_usd(stat: MarketStat | None) -> float | None:
     if not stat:
         return None
@@ -505,6 +511,24 @@ def _flow_strength(value: float | None) -> str:
     if absolute < 2_000_000:
         return "orta"
     return "güçlü"
+
+
+def _flow_totals(stats: dict[str, MarketStat] | None) -> tuple[float, float, float] | None:
+    if not stats:
+        return None
+    buy_total = sum(stat.taker_buy_quote_volume for stat in stats.values())
+    sell_total = sum(stat.taker_sell_quote_volume for stat in stats.values())
+    if buy_total <= 0 and sell_total <= 0:
+        return None
+    return buy_total, sell_total, buy_total - sell_total
+
+
+def _flow_totals_suffix(stats: dict[str, MarketStat] | None) -> str:
+    totals = _flow_totals(stats)
+    if not totals:
+        return ""
+    buy_total, sell_total, _ = totals
+    return f" | Alış {_fmt_abs_amount(buy_total, '$')} / Satış {_fmt_abs_amount(sell_total, '$')}"
 
 
 def _sector_flow_amounts(
@@ -548,14 +572,21 @@ def _symbol_flow_line(
 
     if flow:
         amount = _flow_pressure_usd(flow)
-        text = f"5M Akış: {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
+        if flow.taker_buy_quote_volume > 0 or flow.taker_sell_quote_volume > 0:
+            text = (
+                f"Akış: Alış {_fmt_abs_amount(flow.taker_buy_quote_volume, '$')} | "
+                f"Satış {_fmt_abs_amount(flow.taker_sell_quote_volume, '$')} | "
+                f"Net {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
+            )
+        else:
+            text = f"Akış: Net {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
         if confirm:
-            text += f" | 1H {confirm.price_change_pct:+.1f}%"
+            text += f" | teyit {confirm.price_change_pct:+.1f}%"
         return text
 
     if confirm:
         amount = _flow_pressure_usd(confirm)
-        return f"1H Akış: {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
+        return f"Teyit Akışı: {_fmt_amount(amount, '$')} {_flow_strength(amount)}"
     return None
 
 
@@ -591,7 +622,7 @@ def _alarm_short(item: TimeframeAnalysis, cost: float | None) -> str | None:
     if alarm == "Yok":
         return None
     first_line = alarm.splitlines()[0]
-    return f"{_timeframe_label(item.timeframe)} {first_line}"
+    return first_line
 
 
 def _decision(item: TimeframeAnalysis, cost: float | None, altcoin_blocked: bool = False) -> str:
@@ -811,6 +842,82 @@ def _position_line(
     return "Pozisyon: BELİRSİZ 🟡 | izle"
 
 
+def _entry_decision(
+    symbol_analysis: SymbolAnalysis,
+    altcoin_blocked: bool,
+    order_book: OrderBookPressure | None,
+    flow_stats: dict[str, MarketStat] | None,
+    onchain_flow: OnChainFlow | None = None,
+    stablecoin_reserve: StablecoinReserve | None = None,
+) -> tuple[str, bool]:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    if not item_15m or not item_1h or not item_4h:
+        return "Giriş: HAYIR 🔴 | veri eksik", False
+
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book, onchain_flow),
+        _fake_risk_score(item_1h, order_book, onchain_flow),
+    )
+    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+    onchain_weak = _onchain_sell_pressure(onchain_flow)
+    onchain_strong = _onchain_accumulation(onchain_flow)
+    stablecoin_strong = _stablecoin_buy_power(stablecoin_reserve)
+    near_support_pct = ((item_4h.close - item_4h.support) / item_4h.support) * 100 if item_4h.support else 999
+    reversal = item_15m.candle_pattern in {"Hammer", "Bullish Engulfing"} or item_1h.candle_pattern in {
+        "Hammer",
+        "Bullish Engulfing",
+    }
+
+    if altcoin_blocked:
+        return "Giriş: HAYIR 🔴 | BTC zayıf", False
+    if fake_score >= 3:
+        return "Giriş: HAYIR 🔴 | fake/dağıtım riski", False
+    if onchain_weak and item_1h.trend_score <= 3:
+        return "Giriş: HAYIR 🔴 | zincir satış baskısı", False
+    if item_1h.trend_score <= -5 or (item_15m.trend_score <= -5 and item_1h.trend_score <= -3):
+        return "Giriş: HAYIR 🔴 | trend düşüşte", False
+    if item_15m.taker_delta_pct <= -15 and item_1h.trend_score <= 0:
+        return "Giriş: HAYIR 🔴 | satıcı baskısı", False
+    if flow_amount is not None and flow_amount <= -100_000:
+        return f"Giriş: HAYIR 🔴 | para çıkışı {_fmt_amount(flow_amount, '$')}", False
+    if item_4h.close <= item_4h.support:
+        return "Giriş: HAYIR 🔴 | destek kırıldı", False
+
+    if (
+        item_1h.trend_score >= 6
+        and item_15m.trend_score >= 3
+        and item_15m.taker_delta_pct >= 0
+        and not orderbook_weak
+        and not onchain_weak
+        and (flow_amount is None or flow_amount >= 25_000)
+    ):
+        reason = "1H güçlü"
+        if onchain_strong or stablecoin_strong:
+            reason = "zincir destekli"
+        return f"Giriş: EVET 🟢 | {reason}", True
+
+    if (
+        near_support_pct <= 1.5
+        and item_1h.trend_score > -3
+        and item_15m.rsi <= 50
+        and reversal
+        and not orderbook_weak
+    ):
+        return "Giriş: KADEMELİ 🟢 | destekte dönüş var", True
+
+    if item_1h.trend_score >= 3 and item_15m.trend_score >= 0 and item_15m.taker_delta_pct >= -5:
+        if flow_amount is not None and flow_amount < 25_000:
+            return "Giriş: BEKLE 🟡 | akış zayıf", False
+        return "Giriş: BEKLE 🟡 | teyit bekle", False
+
+    return "Giriş: BEKLE 🟡 | net sinyal yok", False
+
+
 def _timeframe_map(symbol_analysis: SymbolAnalysis) -> dict[str, TimeframeAnalysis]:
     return {item.timeframe: item for item in symbol_analysis.timeframes}
 
@@ -852,16 +959,21 @@ def _rise_signal(
     return None
 
 
-def _trade_zones(item: TimeframeAnalysis, altcoin_blocked: bool) -> str:
-    if altcoin_blocked:
-        return "Plan: BTC zayif, yeni giris bekle"
-
+def _trade_zones(item: TimeframeAnalysis, altcoin_blocked: bool, entry_allowed: bool = False) -> str:
     support = item.support
     resistance = item.resistance
     close = item.close
+    risk = support * 0.985
+
+    if altcoin_blocked:
+        return "Plan: BTC zayif, yeni giris bekle"
+    if not entry_allowed:
+        if close <= support:
+            return f"Plan: Giriş yok | destek kırıldı | Risk {_fmt_price(risk)} altı"
+        return f"Plan: Giriş yok | Destek {_fmt_price(support)} | Direnç {_fmt_price(resistance)}"
+
     entry_low = support
     entry_high = support * 1.01
-    risk = support * 0.985
 
     if close >= resistance:
         target = resistance + max((resistance - support) * 0.5, close * 0.015)
@@ -907,25 +1019,25 @@ def _crash_warning(
 
     if item_15m.trend_score <= -3 or item_15m.close < item_15m.ema20:
         score += 1
-        reasons.append("BTC 15M zayif")
+        reasons.append("BTC kısa vade zayif")
     if item_1h.trend_score <= -3 or item_1h.close < item_1h.ema20:
         score += 1
-        reasons.append("BTC 1H zayif")
+        reasons.append("BTC trend zayif")
     if item_4h.trend_score <= -4 or item_4h.close <= item_4h.support * 1.02:
         score += 1
-        reasons.append("BTC 4H riskli")
+        reasons.append("BTC ana destek riskli")
     if flow and flow.price_change_pct <= -0.20:
         score += 1
         reasons.append(f"5M para cikisi {flow.price_change_pct:+.1f}%")
     if confirm and confirm.price_change_pct <= -0.50:
         score += 1
-        reasons.append(f"1H para cikisi {confirm.price_change_pct:+.1f}%")
+        reasons.append(f"teyit para cikisi {confirm.price_change_pct:+.1f}%")
     if item_15m.volume_change_pct >= 80 and item_15m.change_pct < 0:
         score += 1
         reasons.append("hacimli satis")
     if item_15m.close <= item_15m.support * 1.005:
         score += 1
-        reasons.append("15M destek dibinde")
+        reasons.append("kisa destek dibinde")
 
     if score >= 4:
         return "Çöküş riski YÜKSEK ⚠️ " + " | ".join(reasons[:3])
@@ -955,27 +1067,28 @@ def _flow_summary(
         positive_total = sum(amount for amount in instant_amounts.values() if amount > 0)
         negative_total = sum(-amount for amount in instant_amounts.values() if amount < 0)
         total = positive_total - negative_total
+        totals_suffix = _flow_totals_suffix(flow_stats)
         leader, leader_amount = max(instant_amounts.items(), key=lambda item: item[1])
         leader_symbol = _top_flow_symbol(instant_symbols.get(leader, []))
 
         if negative_total > positive_total * 1.25 and total <= -25_000:
-            return f"5M Net Akış: USDT'ye kaçış {_fmt_amount(total, '$')} | {_flow_strength(total)}"
+            return f"Anlık Net Akış: USDT'ye kaçış {_fmt_amount(total, '$')} | {_flow_strength(total)}{totals_suffix}"
 
         if leader_amount > 0:
             suffix = f" ({leader_symbol})" if leader_symbol else ""
             if abs(leader_amount) < 25_000:
-                return f"5M Net Akış: net zayıf | {leader} {_fmt_amount(leader_amount, '$')} çok zayıf"
-            return f"5M Net Akış: {leader} {_fmt_amount(leader_amount, '$')} | {_flow_strength(leader_amount)}{suffix}"
+                return f"Anlık Net Akış: net zayıf | {leader} {_fmt_amount(leader_amount, '$')} çok zayıf{totals_suffix}"
+            return f"Anlık Net Akış: {leader} {_fmt_amount(leader_amount, '$')} | {_flow_strength(leader_amount)}{suffix}{totals_suffix}"
 
         if total < 0:
-            return f"5M Net Akış: satış baskısı {_fmt_amount(total, '$')} | {_flow_strength(total)}"
+            return f"Anlık Net Akış: satış baskısı {_fmt_amount(total, '$')} | {_flow_strength(total)}{totals_suffix}"
 
     if confirm_amounts:
         confirm_leader, confirm_amount = max(confirm_amounts.items(), key=lambda item: item[1])
         if confirm_amount > 50_000:
             symbol = _top_flow_symbol(confirm_symbols.get(confirm_leader, []))
             suffix = f" ({symbol})" if symbol else ""
-            return f"1H Akış: anlık zayıf, para {confirm_leader} içinde {_fmt_amount(confirm_amount, '$')}{suffix}"
+            return f"Teyit Akışı: anlık zayıf, para {confirm_leader} içinde {_fmt_amount(confirm_amount, '$')}{suffix}"
 
     if daily_amounts:
         daily_leader, daily_amount = max(daily_amounts.items(), key=lambda item: item[1])
@@ -1079,7 +1192,7 @@ def build_report(
         report_time,
     ]
     if btc_4h_bearish:
-        lines.append("BTC 4H zayif: altcoin bekle modu aktif")
+        lines.append("BTC zayif: altcoin bekle modu aktif")
     elif btc_unavailable:
         lines.append("BTC verisi yok: altcoin bekle modu aktif")
     if crash_text := _crash_warning(analyses, flow_stats, confirm_stats):
@@ -1104,28 +1217,24 @@ def build_report(
             if (alarm := _alarm_short(item, cost))
         ]
         rise_signal = _rise_signal(symbol_analysis, flow_stats, confirm_stats, altcoin_blocked)
+        entry_line, entry_allowed = _entry_decision(
+            symbol_analysis,
+            altcoin_blocked,
+            order_book,
+            flow_stats,
+            onchain_flow,
+            stablecoin_reserve,
+        )
 
         lines.extend([
             "",
             symbol_analysis.symbol,
             *([f"Sektor: {sector}"] if sector else []),
             f"Fiyat: {_fmt_price(last_item.close)}",
-            *(
-                [position]
-                if (
-                    position := _position_line(
-                        symbol_analysis,
-                        altcoin_blocked,
-                        order_book,
-                        onchain_flow,
-                        stablecoin_reserve,
-                    )
-                )
-                else []
-            ),
+            entry_line,
             *([onchain] if (onchain := _onchain_line(onchain_flow)) else []),
             *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book, onchain_flow)) else []),
-            *([rise_signal] if rise_signal else []),
+            *([rise_signal] if rise_signal and entry_allowed else []),
             *([flow_line] if (flow_line := _symbol_flow_line(symbol_analysis.symbol, flow_stats, confirm_stats)) else []),
             *(
                 [f"24s: {market_stats[symbol_analysis.symbol].price_change_pct:+.1f}%"]
@@ -1136,16 +1245,9 @@ def build_report(
             ),
         ])
 
-        for item in symbol_analysis.timeframes:
-            lines.append(
-                f"{_timeframe_label(item.timeframe)}: {_trend_label(item)} | "
-                f"Güç {item.trend_score:+d} | RSI {item.rsi:.0f} | "
-                f"{_decision(item, cost, altcoin_blocked)}"
-            )
-
         lines.extend([
-            f"4H Destek/Direnç: {_fmt_price(last_item.support)} / {_fmt_price(last_item.resistance)}",
-            _trade_zones(last_item, altcoin_blocked),
+            f"Seviye: {_fmt_price(last_item.support)} / {_fmt_price(last_item.resistance)}",
+            _trade_zones(last_item, altcoin_blocked, entry_allowed),
             f"Alarm: {'; '.join(alarm_lines) if alarm_lines else 'Yok'}",
         ])
     return "\n".join(lines)
