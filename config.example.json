@@ -1,0 +1,10 @@
+{
+  "symbol": "BTCUSDT",
+  "etf": "us-btc-spot",
+  "telegram": false,
+  "details": false,
+  "flow": false,
+  "watch": false,
+  "interval": 300,
+  "klines_limit": 220
+}

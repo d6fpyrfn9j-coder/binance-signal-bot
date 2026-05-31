@@ -1,0 +1,42 @@
+name: Binance Signal Bot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binance-signal-bot
+  cancel-in-progress: true
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Send Telegram report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BTCUSDT_COST: ${{ secrets.BTCUSDT_COST }}
+          ETHUSDT_COST: ${{ secrets.ETHUSDT_COST }}
+          SOLUSDT_COST: ${{ secrets.SOLUSDT_COST }}
+          FETUSDT_COST: ${{ secrets.FETUSDT_COST }}
+          RENDERUSDT_COST: ${{ secrets.RENDERUSDT_COST }}
+          ONDOUSDT_COST: ${{ secrets.ONDOUSDT_COST }}
+          FILUSDT_COST: ${{ secrets.FILUSDT_COST }}
+          ARBUSDT_COST: ${{ secrets.ARBUSDT_COST }}
+          OPUSDT_COST: ${{ secrets.OPUSDT_COST }}
+        run: python main.py --once
