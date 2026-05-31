@@ -187,28 +187,29 @@ Actions > Binance Signal Bot > Run workflow
 ```text
 KRIPTO RAPORU
 2026-05-31 00:15:00 CEST
-Piyasa: riskli, bekle
-Para: çıkış -420K$ | Alış 3.8M$ / Satış 4.2M$
+Piyasa: riskli, bekle 🟡
+Para: çıkış 🔴 -420K$ | Alış 3.8M$ / Satış 4.2M$
 
 BTCUSDT
 Fiyat: 73896
-Karar: GİRİŞ VAR | zincir destekli
-Para: +82K$ alış
-Giriş: 72512-73238
+Karar: GİRİŞ VAR 🟢 | zincir destekli
+Para: +82K$ alış 🟢
+🚀 Ekstra yükseliş yakın
+Giriş: 72512-73238 🟢
 Hedef: 78080
 Stop: 71425
-Uyarı: Mum: Hammer
+Uyarı: Mum: Hammer ⚠️
 
 ETHUSDT
 Fiyat: 2024
-Karar: GİRİŞ YOK | fake/dağıtım riski
-Para: -36K$ satış
-Giriş: Bekle
-Tetik: 2140 üstü
+Karar: GİRİŞ YOK 🔴 | fake/dağıtım riski
+Para: -36K$ satış 🔴
+Giriş: Bekle 🟡
+Tetik: 2140 üstü 🟡
 Geri çekilme: 1967-1983
 Hedef: 2180
 Stop: 1938 (tetikten sonra)
-Uyarı: Yok
+Uyarı: Yok 🟢
 ```
 ## Notlar
 

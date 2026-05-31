@@ -1113,12 +1113,12 @@ def _simple_market_line(
     btc_unavailable: bool,
 ) -> str:
     if btc_unavailable:
-        return "Piyasa: veri yok, bekle"
+        return "Piyasa: veri yok, bekle 🟡"
     if crash_text and "Çöküş riski YÜKSEK" in crash_text:
-        return "Piyasa: çok riskli"
+        return "Piyasa: çok riskli 🔴"
     if btc_4h_bearish or crash_text:
-        return "Piyasa: riskli, bekle"
-    return "Piyasa: normal"
+        return "Piyasa: riskli, bekle 🟡"
+    return "Piyasa: normal 🟢"
 
 
 def _simple_total_flow_line(flow_stats: dict[str, MarketStat] | None) -> str | None:
@@ -1128,11 +1128,11 @@ def _simple_total_flow_line(flow_stats: dict[str, MarketStat] | None) -> str | N
 
     buy_total, sell_total, net = totals
     if net >= 100_000:
-        direction = "giriş"
+        direction = "giriş 🟢"
     elif net <= -100_000:
-        direction = "çıkış"
+        direction = "çıkış 🔴"
     else:
-        direction = "kararsız"
+        direction = "kararsız 🟡"
     return (
         f"Para: {direction} {_fmt_amount(net, '$')} | "
         f"Alış {_fmt_abs_amount(buy_total, '$')} / Satış {_fmt_abs_amount(sell_total, '$')}"
@@ -1146,11 +1146,11 @@ def _simple_decision_line(entry_line: str) -> str:
     reason = parts[1] if len(parts) > 1 else ""
 
     if "HAYIR" in status:
-        decision = "GİRİŞ YOK"
+        decision = "GİRİŞ YOK 🔴"
     elif "EVET" in status or "KADEMELİ" in status:
-        decision = "GİRİŞ VAR"
+        decision = "GİRİŞ VAR 🟢"
     elif "BEKLE" in status:
-        decision = "BEKLE"
+        decision = "BEKLE 🟡"
     else:
         decision = status
 
@@ -1164,12 +1164,47 @@ def _simple_symbol_flow(symbol: str, flow_stats: dict[str, MarketStat] | None) -
         return None
 
     if amount >= 25_000:
-        label = "alış"
+        label = "alış 🟢"
     elif amount <= -25_000:
-        label = "satış"
+        label = "satış 🔴"
     else:
-        label = "zayıf"
+        label = "zayıf 🟡"
     return f"Para: {_fmt_amount(amount, '$')} {label}"
+
+
+def _rocket_line(
+    symbol_analysis: SymbolAnalysis,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    order_book: OrderBookPressure | None,
+    entry_allowed: bool,
+    altcoin_blocked: bool,
+) -> str | None:
+    if altcoin_blocked:
+        return None
+
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    day_levels = _day_trade_levels(symbol_analysis)
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
+    if not item_15m or not item_1h or not day_levels or not flow:
+        return None
+
+    close, _, resistance, _ = day_levels
+    flow_amount = _flow_pressure_usd(flow)
+    near_breakout = close >= resistance * 0.992
+    strong_flow = flow_amount is not None and flow_amount >= 100_000
+    trend_ready = item_15m.trend_score >= 3 and item_1h.trend_score >= 3
+    rsi_ok = item_15m.rsi < 72 and item_1h.rsi < 72
+    confirm_ok = not confirm or confirm.price_change_pct >= -0.10
+    orderbook_ok = not order_book or order_book.imbalance_pct > -15
+    fake_risk = item_15m.fake_rise_risk or item_15m.distribution_risk
+
+    if entry_allowed and near_breakout and strong_flow and trend_ready and rsi_ok and confirm_ok and orderbook_ok and not fake_risk:
+        return "🚀 Ekstra yükseliş yakın"
+    return None
 
 
 def _simple_trade_lines(
@@ -1201,9 +1236,10 @@ def _simple_trade_lines(
 
     target = _day_trade_target(entry_value, levels, risk_pct)
     stop = _day_trade_stop(entry_value, support, risk_pct)
-    lines = [f"Giriş: {entry}"]
+    entry_emoji = "🟢" if entry_allowed else "🟡"
+    lines = [f"Giriş: {entry} {entry_emoji}"]
     if not entry_allowed:
-        lines.append(f"Tetik: {_fmt_price(entry_value)} üstü")
+        lines.append(f"Tetik: {_fmt_price(entry_value)} üstü 🟡")
         pullback_high = min(close, support * 1.008)
         if pullback_high > support:
             lines.append(f"Geri çekilme: {_fmt_price(support)}-{_fmt_price(pullback_high)}")
@@ -1215,7 +1251,7 @@ def _simple_trade_lines(
 
 
 def _simple_alarm_line(alarm_lines: list[str]) -> str:
-    return f"Uyarı: {alarm_lines[0]}" if alarm_lines else "Uyarı: Yok"
+    return f"Uyarı: {alarm_lines[0]} ⚠️" if alarm_lines else "Uyarı: Yok 🟢"
 
 
 def _btc_4h_bearish(analyses: list[SymbolAnalysis]) -> bool:
@@ -1472,6 +1508,20 @@ def build_report(
             f"Fiyat: {_fmt_price(display_close)}",
             _simple_decision_line(entry_line),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
+            *(
+                [rocket]
+                if (
+                    rocket := _rocket_line(
+                        symbol_analysis,
+                        flow_stats,
+                        confirm_stats,
+                        order_book,
+                        entry_allowed,
+                        altcoin_blocked,
+                    )
+                )
+                else []
+            ),
             *_simple_trade_lines(symbol_analysis, entry_allowed),
             _simple_alarm_line(alarm_lines),
         ])
