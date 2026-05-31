@@ -187,34 +187,28 @@ Actions > Binance Signal Bot > Run workflow
 ```text
 KRIPTO RAPORU
 2026-05-31 00:15:00 CEST
-Cokus erken uyari ⚠️ BTC trend zayif | para cikisi | hacimli satis
-Anlık Net Akış: Layer 1 +420K$ | küçük (ETH +310K$) | Alış 4.2M$ / Satış 3.8M$
-Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor
+Piyasa: riskli, bekle
+Para: çıkış -420K$ | Alış 3.8M$ / Satış 4.2M$
 
 BTCUSDT
-Sektor: BTC
 Fiyat: 73896
-Giriş: EVET 🟢 | zincir destekli
-Zincir: Binance net çıkış -1.2K BTC ✅
-İz: Alıcı %56 | OB alış duvarı
-Yükseliş sinyali var 🟢
-Akış: Alış 1.2M$ | Satış 1.1M$ | Net +82K$ zayıf | teyit -0.2%
-Beklenti: yukarı deneme | çıkış 78080
-Seviye: 72512 / 78080
-Trade: Hazır | Giriş Bölgesi 72512-73238 | Çıkış Fiyatı 78080 | Stop 71425
-Alarm: Mum: Hammer
+Karar: GİRİŞ VAR | zincir destekli
+Para: +82K$ alış
+Giriş: 72512-73238
+Hedef: 78080
+Stop: 71425
+Uyarı: Mum: Hammer
 
 ETHUSDT
-Sektor: Layer 1
 Fiyat: 2024
-Giriş: HAYIR 🔴 | fake/dağıtım riski
-Zincir: Binance net giriş +8.4K ETH ⚠️
-İz: Satıcı %57 | Dağıtım riski | Fake YÜKSEK ⚠️
-Akış: Alış 830K$ | Satış 866K$ | Net -36K$ zayıf | teyit -0.4%
-Beklenti: aşağı baskı | destek 1967
-Seviye: 1967 / 2140
-Trade: Bekle | Tetik 2140 üstü | Geri Çekilme 1967-1983 | Çıkış Fiyatı 2180 | Stop(Tetik) 1938
-Alarm: Yok
+Karar: GİRİŞ YOK | fake/dağıtım riski
+Para: -36K$ satış
+Giriş: Bekle
+Tetik: 2140 üstü
+Geri çekilme: 1967-1983
+Hedef: 2180
+Stop: 1938 (tetikten sonra)
+Uyarı: Yok
 ```
 ## Notlar
 

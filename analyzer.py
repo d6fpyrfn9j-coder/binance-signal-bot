@@ -1103,8 +1103,119 @@ def _day_trade_plan(
     pullback = f" | Geri Çekilme {_fmt_price(support)}-{_fmt_price(pullback_high)}" if pullback_high > support else ""
     return (
         f"Trade: Bekle | Tetik {_fmt_price(trigger_value)} üstü{pullback} | "
-        f"Çıkış Fiyatı {_fmt_price(target)} | Stop(Tetik) {_fmt_price(stop)}"
+        f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)} (tetikten sonra)"
     )
+
+
+def _simple_market_line(
+    crash_text: str | None,
+    btc_4h_bearish: bool,
+    btc_unavailable: bool,
+) -> str:
+    if btc_unavailable:
+        return "Piyasa: veri yok, bekle"
+    if crash_text and "Çöküş riski YÜKSEK" in crash_text:
+        return "Piyasa: çok riskli"
+    if btc_4h_bearish or crash_text:
+        return "Piyasa: riskli, bekle"
+    return "Piyasa: normal"
+
+
+def _simple_total_flow_line(flow_stats: dict[str, MarketStat] | None) -> str | None:
+    totals = _flow_totals(flow_stats)
+    if not totals:
+        return None
+
+    buy_total, sell_total, net = totals
+    if net >= 100_000:
+        direction = "giriş"
+    elif net <= -100_000:
+        direction = "çıkış"
+    else:
+        direction = "kararsız"
+    return (
+        f"Para: {direction} {_fmt_amount(net, '$')} | "
+        f"Alış {_fmt_abs_amount(buy_total, '$')} / Satış {_fmt_abs_amount(sell_total, '$')}"
+    )
+
+
+def _simple_decision_line(entry_line: str) -> str:
+    text = entry_line.removeprefix("Giriş: ").strip()
+    parts = [part.strip() for part in text.split("|", 1)]
+    status = parts[0]
+    reason = parts[1] if len(parts) > 1 else ""
+
+    if "HAYIR" in status:
+        decision = "GİRİŞ YOK"
+    elif "EVET" in status or "KADEMELİ" in status:
+        decision = "GİRİŞ VAR"
+    elif "BEKLE" in status:
+        decision = "BEKLE"
+    else:
+        decision = status
+
+    return f"Karar: {decision}" + (f" | {reason}" if reason else "")
+
+
+def _simple_symbol_flow(symbol: str, flow_stats: dict[str, MarketStat] | None) -> str | None:
+    flow = flow_stats.get(symbol) if flow_stats else None
+    amount = _flow_pressure_usd(flow)
+    if amount is None:
+        return None
+
+    if amount >= 25_000:
+        label = "alış"
+    elif amount <= -25_000:
+        label = "satış"
+    else:
+        label = "zayıf"
+    return f"Para: {_fmt_amount(amount, '$')} {label}"
+
+
+def _simple_trade_lines(
+    symbol_analysis: SymbolAnalysis,
+    entry_allowed: bool,
+) -> list[str]:
+    day_levels = _day_trade_levels(symbol_analysis)
+    if not day_levels:
+        return ["Giriş: veri eksik"]
+
+    close, support, resistance, levels = day_levels
+    risk_pct = _day_trade_risk_pct(symbol_analysis.symbol)
+    near_support = close <= support * 1.012
+    near_resistance = close >= resistance * 0.992
+
+    if entry_allowed and near_support:
+        entry_value = close
+        entry_high = min(close, support * 1.008)
+        entry = f"{_fmt_price(support)}-{_fmt_price(entry_high)}"
+        stop_label = "Stop"
+    elif entry_allowed and not near_resistance:
+        entry_value = close
+        entry = _fmt_price(close)
+        stop_label = "Stop"
+    else:
+        entry_value = resistance * 1.001
+        entry = "Bekle"
+    stop_label = "Stop"
+
+    target = _day_trade_target(entry_value, levels, risk_pct)
+    stop = _day_trade_stop(entry_value, support, risk_pct)
+    lines = [f"Giriş: {entry}"]
+    if not entry_allowed:
+        lines.append(f"Tetik: {_fmt_price(entry_value)} üstü")
+        pullback_high = min(close, support * 1.008)
+        if pullback_high > support:
+            lines.append(f"Geri çekilme: {_fmt_price(support)}-{_fmt_price(pullback_high)}")
+    lines.extend([
+        f"Hedef: {_fmt_price(target)}",
+        f"{stop_label}: {_fmt_price(stop)}" + (" (tetikten sonra)" if not entry_allowed else ""),
+    ])
+    return lines
+
+
+def _simple_alarm_line(alarm_lines: list[str]) -> str:
+    return f"Uyarı: {alarm_lines[0]}" if alarm_lines else "Uyarı: Yok"
 
 
 def _btc_4h_bearish(analyses: list[SymbolAnalysis]) -> bool:
@@ -1324,31 +1435,20 @@ def build_report(
 ) -> str:
     report_time = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     btc_4h_bearish = _btc_4h_bearish(analyses)
+    crash_text = _crash_warning(analyses, flow_stats, confirm_stats)
     lines = [
         "KRIPTO RAPORU",
         report_time,
+        _simple_market_line(crash_text, btc_4h_bearish, btc_unavailable),
     ]
-    if btc_4h_bearish:
-        lines.append("BTC zayif: altcoin bekle modu aktif")
-    elif btc_unavailable:
-        lines.append("BTC verisi yok: altcoin bekle modu aktif")
-    if crash_text := _crash_warning(analyses, flow_stats, confirm_stats):
-        lines.append(crash_text)
-    if flow_text := _flow_summary(analyses, sectors, flow_stats, confirm_stats, market_stats):
+    if flow_text := _simple_total_flow_line(flow_stats):
         lines.append(flow_text)
-    if rotation_text := _correction_rotation(analyses, sectors, flow_stats, confirm_stats):
-        lines.append(rotation_text)
-    if stablecoin_text := _stablecoin_line(stablecoin_reserve):
-        lines.append(stablecoin_text)
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
         last_item = symbol_analysis.timeframes[-1]
         day_levels = _day_trade_levels(symbol_analysis)
         display_close = day_levels[0] if day_levels else last_item.close
-        display_support = day_levels[1] if day_levels else last_item.support
-        display_resistance = day_levels[2] if day_levels else last_item.resistance
-        sector = sectors.get(symbol_analysis.symbol) if sectors else None
         altcoin_blocked = (btc_4h_bearish or btc_unavailable) and symbol_analysis.symbol != "BTCUSDT"
         order_book = order_books.get(symbol_analysis.symbol) if order_books else None
         onchain_flow = onchain_flows.get(symbol_analysis.symbol) if onchain_flows else None
@@ -1357,7 +1457,6 @@ def build_report(
             for item in symbol_analysis.timeframes
             if (alarm := _alarm_short(item, cost))
         ]
-        rise_signal = _rise_signal(symbol_analysis, flow_stats, confirm_stats, altcoin_blocked)
         entry_line, entry_allowed = _entry_decision(
             symbol_analysis,
             altcoin_blocked,
@@ -1370,38 +1469,10 @@ def build_report(
         lines.extend([
             "",
             symbol_analysis.symbol,
-            *([f"Sektor: {sector}"] if sector else []),
             f"Fiyat: {_fmt_price(display_close)}",
-            entry_line,
-            *([onchain] if (onchain := _onchain_line(onchain_flow)) else []),
-            *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book, onchain_flow)) else []),
-            *([rise_signal] if rise_signal and entry_allowed else []),
-            *([flow_line] if (flow_line := _symbol_flow_line(symbol_analysis.symbol, flow_stats, confirm_stats)) else []),
-            *(
-                [forecast]
-                if (
-                    forecast := _forecast_line(
-                        symbol_analysis,
-                        altcoin_blocked,
-                        entry_allowed,
-                        flow_stats,
-                        order_book,
-                    )
-                )
-                else []
-            ),
-            *(
-                [f"24s: {market_stats[symbol_analysis.symbol].price_change_pct:+.1f}%"]
-                if market_stats and symbol_analysis.symbol in market_stats
-                and not (flow_stats and symbol_analysis.symbol in flow_stats)
-                and not (confirm_stats and symbol_analysis.symbol in confirm_stats)
-                else []
-            ),
-        ])
-
-        lines.extend([
-            f"Seviye: {_fmt_price(display_support)} / {_fmt_price(display_resistance)}",
-            _day_trade_plan(symbol_analysis, altcoin_blocked, entry_allowed),
-            f"Alarm: {'; '.join(alarm_lines) if alarm_lines else 'Yok'}",
+            _simple_decision_line(entry_line),
+            *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
+            *_simple_trade_lines(symbol_analysis, entry_allowed),
+            _simple_alarm_line(alarm_lines),
         ])
     return "\n".join(lines)
