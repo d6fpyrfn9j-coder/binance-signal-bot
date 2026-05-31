@@ -461,9 +461,17 @@ def _timeframe_label(timeframe: str) -> str:
 
 
 def _fmt_price(value: float) -> str:
-    if value >= 100:
+    if value >= 1000:
         return f"{value:.0f}"
-    return f"{value:.2f}"
+    if value >= 100:
+        return f"{value:.1f}".rstrip("0").rstrip(".")
+    if value >= 10:
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    if value >= 1:
+        return f"{value:.3f}".rstrip("0").rstrip(".")
+    if value >= 0.1:
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def _fmt_amount(value: float | None, suffix: str = "") -> str:
@@ -959,6 +967,58 @@ def _rise_signal(
     return None
 
 
+def _day_trade_levels(symbol_analysis: SymbolAnalysis) -> tuple[float, float, float, list[float]] | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    if not item_15m or not item_1h or not item_4h:
+        return None
+
+    close = item_15m.close
+    raw_levels = [
+        item_15m.support,
+        item_15m.resistance,
+        item_1h.support,
+        item_1h.resistance,
+        item_4h.support,
+        item_4h.resistance,
+    ]
+    levels = sorted({level for level in raw_levels if level > 0})
+    below = [level for level in levels if level < close * 0.999]
+    above = [level for level in levels if level > close * 1.001]
+    support = below[-1] if below else min(levels)
+    resistance = above[0] if above else max(levels)
+    if resistance <= close:
+        resistance = close * 1.012
+    return close, support, resistance, levels
+
+
+def _day_trade_risk_pct(symbol: str) -> float:
+    if symbol == "BTCUSDT":
+        return 0.008
+    if symbol in {"ETHUSDT", "SOLUSDT"}:
+        return 0.012
+    return 0.018
+
+
+def _day_trade_target(entry: float, levels: list[float], risk_pct: float) -> float:
+    min_target = entry * (1 + risk_pct * 1.25)
+    preferred = [level for level in levels if level > min_target]
+    if preferred:
+        return preferred[0]
+    return entry * (1 + risk_pct * 1.8)
+
+
+def _day_trade_stop(entry: float, support: float, risk_pct: float) -> float:
+    support_stop = support * 0.996
+    max_loss_stop = entry * (1 - risk_pct)
+    stop = max(support_stop, max_loss_stop)
+    if stop >= entry:
+        stop = max_loss_stop
+    return stop
+
+
 def _forecast_line(
     symbol_analysis: SymbolAnalysis,
     altcoin_blocked: bool,
@@ -969,17 +1029,17 @@ def _forecast_line(
     frames = _timeframe_map(symbol_analysis)
     item_15m = frames.get("15m")
     item_1h = frames.get("1h")
-    item_4h = frames.get("4h")
-    if not item_15m or not item_1h or not item_4h:
+    day_levels = _day_trade_levels(symbol_analysis)
+    if not item_15m or not item_1h or not day_levels:
         return None
 
-    support = item_4h.support
-    resistance = item_4h.resistance
-    close = item_4h.close
-    breakout_target = resistance + max((resistance - support) * 0.5, close * 0.015)
+    close, support, resistance, levels = day_levels
     flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
     flow_amount = _flow_pressure_usd(flow)
     orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+    risk_pct = _day_trade_risk_pct(symbol_analysis.symbol)
+    target_entry = close if entry_allowed else resistance * 1.001
+    target = _day_trade_target(target_entry, levels, risk_pct)
     sell_pressure = item_1h.trend_score <= -3 or orderbook_weak or (
         flow_amount is not None and flow_amount <= -100_000
     )
@@ -995,8 +1055,7 @@ def _forecast_line(
     if close <= support:
         return f"Beklenti: destek altı zayıf | toparlanma {_fmt_price(support)} üstü"
     if buy_pressure:
-        target = resistance if close < resistance else breakout_target
-        return f"Beklenti: yukarı deneme | hedef {_fmt_price(target)}"
+        return f"Beklenti: yukarı deneme | çıkış {_fmt_price(target)}"
     if sell_pressure:
         return f"Beklenti: aşağı baskı | destek {_fmt_price(support)}"
     if close >= resistance * 0.99:
@@ -1004,30 +1063,37 @@ def _forecast_line(
     return f"Beklenti: yatay | {_fmt_price(support)}-{_fmt_price(resistance)}"
 
 
-def _trade_zones(item: TimeframeAnalysis, altcoin_blocked: bool, entry_allowed: bool = False) -> str:
-    support = item.support
-    resistance = item.resistance
-    close = item.close
-    risk = support * 0.985
+def _day_trade_plan(
+    symbol_analysis: SymbolAnalysis,
+    altcoin_blocked: bool,
+    entry_allowed: bool = False,
+) -> str:
+    day_levels = _day_trade_levels(symbol_analysis)
+    if not day_levels:
+        return "Trade: veri eksik"
 
-    if altcoin_blocked:
-        return "Plan: Giriş yok | BTC toparlanması bekle"
-    if not entry_allowed:
-        if close <= support:
-            return f"Plan: Giriş yok | Tetik {_fmt_price(support)} üstü | Risk {_fmt_price(risk)} altı"
-        return f"Plan: Giriş yok | Tetik {_fmt_price(resistance)} üstü | Risk {_fmt_price(risk)} altı"
+    close, support, resistance, levels = day_levels
+    risk_pct = _day_trade_risk_pct(symbol_analysis.symbol)
+    near_support = close <= support * 1.012
+    near_resistance = close >= resistance * 0.992
 
-    entry_low = support
-    entry_high = support * 1.01
+    if entry_allowed and near_support:
+        entry_value = close
+        entry_high = min(close, support * 1.008)
+        entry_text = f"{_fmt_price(support)}-{_fmt_price(entry_high)}"
+    elif entry_allowed and not near_resistance:
+        entry_value = close
+        entry_text = _fmt_price(close)
+    else:
+        entry_value = resistance * 1.001
+        entry_text = f"{_fmt_price(entry_value)} üstü"
 
-    if close >= resistance:
-        target = resistance + max((resistance - support) * 0.5, close * 0.015)
-        return f"Plan: Giriş {_fmt_price(resistance)} üstü | Çıkış/Hedef {_fmt_price(target)} | Risk {_fmt_price(resistance)} altı"
-    if close <= support:
-        return f"Plan: Giriş bekle | Tetik {_fmt_price(support)} üstü | Risk {_fmt_price(risk)} altı"
+    target = _day_trade_target(entry_value, levels, risk_pct)
+    stop = _day_trade_stop(entry_value, support, risk_pct)
+    action = "Bekle" if altcoin_blocked or not entry_allowed else "Hazır"
     return (
-        f"Plan: Giriş {_fmt_price(entry_low)}-{_fmt_price(entry_high)} | "
-        f"Çıkış/Hedef {_fmt_price(resistance)} | Risk {_fmt_price(risk)} altı"
+        f"Trade: {action} | Giriş Fiyatı {entry_text} | "
+        f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
     )
 
 
@@ -1268,6 +1334,10 @@ def build_report(
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
         last_item = symbol_analysis.timeframes[-1]
+        day_levels = _day_trade_levels(symbol_analysis)
+        display_close = day_levels[0] if day_levels else last_item.close
+        display_support = day_levels[1] if day_levels else last_item.support
+        display_resistance = day_levels[2] if day_levels else last_item.resistance
         sector = sectors.get(symbol_analysis.symbol) if sectors else None
         altcoin_blocked = (btc_4h_bearish or btc_unavailable) and symbol_analysis.symbol != "BTCUSDT"
         order_book = order_books.get(symbol_analysis.symbol) if order_books else None
@@ -1291,7 +1361,7 @@ def build_report(
             "",
             symbol_analysis.symbol,
             *([f"Sektor: {sector}"] if sector else []),
-            f"Fiyat: {_fmt_price(last_item.close)}",
+            f"Fiyat: {_fmt_price(display_close)}",
             entry_line,
             *([onchain] if (onchain := _onchain_line(onchain_flow)) else []),
             *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book, onchain_flow)) else []),
@@ -1320,8 +1390,8 @@ def build_report(
         ])
 
         lines.extend([
-            f"Seviye: {_fmt_price(last_item.support)} / {_fmt_price(last_item.resistance)}",
-            _trade_zones(last_item, altcoin_blocked, entry_allowed),
+            f"Seviye: {_fmt_price(display_support)} / {_fmt_price(display_resistance)}",
+            _day_trade_plan(symbol_analysis, altcoin_blocked, entry_allowed),
             f"Alarm: {'; '.join(alarm_lines) if alarm_lines else 'Yok'}",
         ])
     return "\n".join(lines)
