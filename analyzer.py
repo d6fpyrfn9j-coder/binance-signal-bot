@@ -959,6 +959,51 @@ def _rise_signal(
     return None
 
 
+def _forecast_line(
+    symbol_analysis: SymbolAnalysis,
+    altcoin_blocked: bool,
+    entry_allowed: bool,
+    flow_stats: dict[str, MarketStat] | None,
+    order_book: OrderBookPressure | None,
+) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    if not item_15m or not item_1h or not item_4h:
+        return None
+
+    support = item_4h.support
+    resistance = item_4h.resistance
+    close = item_4h.close
+    breakout_target = resistance + max((resistance - support) * 0.5, close * 0.015)
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+    sell_pressure = item_1h.trend_score <= -3 or orderbook_weak or (
+        flow_amount is not None and flow_amount <= -100_000
+    )
+    buy_pressure = entry_allowed or (
+        item_1h.trend_score >= 3
+        and item_15m.taker_delta_pct >= -5
+        and flow_amount is not None
+        and flow_amount >= 25_000
+    )
+
+    if altcoin_blocked:
+        return f"Beklenti: BTC zayıf | destek testi {_fmt_price(support)}"
+    if close <= support:
+        return f"Beklenti: destek altı zayıf | toparlanma {_fmt_price(support)} üstü"
+    if buy_pressure:
+        target = resistance if close < resistance else breakout_target
+        return f"Beklenti: yukarı deneme | hedef {_fmt_price(target)}"
+    if sell_pressure:
+        return f"Beklenti: aşağı baskı | destek {_fmt_price(support)}"
+    if close >= resistance * 0.99:
+        return f"Beklenti: kırılım izlenir | üstü {_fmt_price(resistance)}"
+    return f"Beklenti: yatay | {_fmt_price(support)}-{_fmt_price(resistance)}"
+
+
 def _trade_zones(item: TimeframeAnalysis, altcoin_blocked: bool, entry_allowed: bool = False) -> str:
     support = item.support
     resistance = item.resistance
@@ -966,23 +1011,23 @@ def _trade_zones(item: TimeframeAnalysis, altcoin_blocked: bool, entry_allowed: 
     risk = support * 0.985
 
     if altcoin_blocked:
-        return "Plan: BTC zayif, yeni giris bekle"
+        return "Plan: Giriş yok | BTC toparlanması bekle"
     if not entry_allowed:
         if close <= support:
-            return f"Plan: Giriş yok | destek kırıldı | Risk {_fmt_price(risk)} altı"
-        return f"Plan: Giriş yok | Destek {_fmt_price(support)} | Direnç {_fmt_price(resistance)}"
+            return f"Plan: Giriş yok | Tetik {_fmt_price(support)} üstü | Risk {_fmt_price(risk)} altı"
+        return f"Plan: Giriş yok | Tetik {_fmt_price(resistance)} üstü | Risk {_fmt_price(risk)} altı"
 
     entry_low = support
     entry_high = support * 1.01
 
     if close >= resistance:
         target = resistance + max((resistance - support) * 0.5, close * 0.015)
-        return f"Plan: Kırılım üstü izle | Hedef {_fmt_price(target)} | Risk {_fmt_price(resistance)} altı"
+        return f"Plan: Giriş {_fmt_price(resistance)} üstü | Çıkış/Hedef {_fmt_price(target)} | Risk {_fmt_price(resistance)} altı"
     if close <= support:
-        return f"Plan: Destek kırıldı | Risk {_fmt_price(risk)} altı | Giriş bekle"
+        return f"Plan: Giriş bekle | Tetik {_fmt_price(support)} üstü | Risk {_fmt_price(risk)} altı"
     return (
         f"Plan: Giriş {_fmt_price(entry_low)}-{_fmt_price(entry_high)} | "
-        f"Hedef {_fmt_price(resistance)} | Risk {_fmt_price(risk)} altı"
+        f"Çıkış/Hedef {_fmt_price(resistance)} | Risk {_fmt_price(risk)} altı"
     )
 
 
@@ -1252,6 +1297,19 @@ def build_report(
             *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book, onchain_flow)) else []),
             *([rise_signal] if rise_signal and entry_allowed else []),
             *([flow_line] if (flow_line := _symbol_flow_line(symbol_analysis.symbol, flow_stats, confirm_stats)) else []),
+            *(
+                [forecast]
+                if (
+                    forecast := _forecast_line(
+                        symbol_analysis,
+                        altcoin_blocked,
+                        entry_allowed,
+                        flow_stats,
+                        order_book,
+                    )
+                )
+                else []
+            ),
             *(
                 [f"24s: {market_stats[symbol_analysis.symbol].price_change_pct:+.1f}%"]
                 if market_stats and symbol_analysis.symbol in market_stats

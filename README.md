@@ -198,8 +198,9 @@ Zincir: Binance net çıkış -1.2K BTC ✅
 İz: Alıcı %56 | OB alış duvarı
 Yükseliş sinyali var 🟢
 Akış: Alış 1.2M$ | Satış 1.1M$ | Net +82K$ zayıf | teyit -0.2%
+Beklenti: yukarı deneme | hedef 78080
 Seviye: 72512 / 78080
-Plan: Giriş 72512-73238 | Hedef 78080 | Risk 71425 altı
+Plan: Giriş 72512-73238 | Çıkış/Hedef 78080 | Risk 71425 altı
 Alarm: Mum: Hammer
 
 ETHUSDT
@@ -209,8 +210,9 @@ Giriş: HAYIR 🔴 | fake/dağıtım riski
 Zincir: Binance net giriş +8.4K ETH ⚠️
 İz: Satıcı %57 | Dağıtım riski | Fake YÜKSEK ⚠️
 Akış: Alış 830K$ | Satış 866K$ | Net -36K$ zayıf | teyit -0.4%
+Beklenti: aşağı baskı | destek 1967
 Seviye: 1967 / 2140
-Plan: Giriş yok | Destek 1967 | Direnç 2140
+Plan: Giriş yok | Tetik 2140 üstü | Risk 1938 altı
 Alarm: Yok
 ```
 ## Notlar
