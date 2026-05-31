@@ -14,6 +14,8 @@ from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pa
 class TimeframeAnalysis:
     timeframe: str
     trend: str
+    trend_score: int
+    structure: str
     close: float
     change_pct: float
     rsi: float
@@ -39,21 +41,124 @@ class SymbolAnalysis:
     timeframes: list[TimeframeAnalysis]
 
 
-def _trend(close: float, ema20: float, ema50: float, ema200: float, macd_hist: float) -> str:
-    bullish = close > ema20 > ema50 > ema200 and macd_hist > 0
-    bearish = close < ema20 < ema50 < ema200 and macd_hist < 0
-    if bullish:
+def _trend_from_score(score: int) -> str:
+    if score >= 5:
         return "bullish"
-    if bearish:
+    if score <= -5:
         return "bearish"
     return "neutral"
 
 
 def _swing_levels(candles: list[Candle], lookback: int = 30) -> tuple[float, float]:
-    recent = candles[-lookback:]
+    completed = candles[:-1] if len(candles) > 1 else candles
+    recent = completed[-lookback:] or candles[-lookback:]
     support = min(c.low for c in recent)
     resistance = max(c.high for c in recent)
     return support, resistance
+
+
+def _pivot_values(candles: list[Candle], field: str, lookback: int = 80) -> list[float]:
+    if len(candles) < 10:
+        return []
+
+    left = 2
+    right = 2
+    start = max(left, len(candles) - lookback)
+    end = len(candles) - right
+    pivots: list[float] = []
+
+    for index in range(start, end):
+        current = getattr(candles[index], field)
+        window = [getattr(candle, field) for candle in candles[index - left:index + right + 1]]
+        if field == "high" and current == max(window):
+            pivots.append(current)
+        elif field == "low" and current == min(window):
+            pivots.append(current)
+    return pivots[-2:]
+
+
+def _market_structure(candles: list[Candle], lookback: int = 80) -> str:
+    completed = candles[:-1] if len(candles) > 1 else candles
+    highs = _pivot_values(completed, "high", lookback)
+    lows = _pivot_values(completed, "low", lookback)
+
+    if len(highs) < 2 or len(lows) < 2:
+        recent = completed[-lookback:]
+        if len(recent) < 20:
+            return "range"
+        midpoint = len(recent) // 2
+        highs = [max(c.high for c in recent[:midpoint]), max(c.high for c in recent[midpoint:])]
+        lows = [min(c.low for c in recent[:midpoint]), min(c.low for c in recent[midpoint:])]
+
+    higher_high = highs[-1] > highs[-2]
+    higher_low = lows[-1] > lows[-2]
+    lower_high = highs[-1] < highs[-2]
+    lower_low = lows[-1] < lows[-2]
+
+    if higher_high and higher_low:
+        return "up"
+    if lower_high and lower_low:
+        return "down"
+    return "range"
+
+
+def _trend_score(
+    close: float,
+    previous_close: float,
+    ema20_now: float,
+    ema50_now: float,
+    ema200_now: float,
+    ema20_prev: float,
+    ema50_prev: float,
+    macd_hist: float,
+    macd_hist_prev: float,
+    momentum: float,
+    volume_change_pct: float,
+    support: float,
+    resistance: float,
+    structure: str,
+) -> int:
+    score = 0
+
+    score += 1 if close > ema20_now else -1
+    score += 1 if close > ema50_now else -1
+    score += 1 if ema20_now > ema50_now else -1
+    score += 1 if ema50_now > ema200_now else -1
+
+    if ema20_now > ema20_prev and ema50_now >= ema50_prev:
+        score += 1
+    elif ema20_now < ema20_prev and ema50_now <= ema50_prev:
+        score -= 1
+
+    if macd_hist > 0:
+        score += 1
+    elif macd_hist < 0:
+        score -= 1
+
+    if macd_hist > macd_hist_prev:
+        score += 1
+    elif macd_hist < macd_hist_prev:
+        score -= 1
+
+    if momentum >= 0.25:
+        score += 1
+    elif momentum <= -0.25:
+        score -= 1
+
+    if structure == "up":
+        score += 2
+    elif structure == "down":
+        score -= 2
+
+    if resistance and close > resistance:
+        score += 2
+    elif support and close < support:
+        score -= 2
+
+    if volume_change_pct >= 50:
+        score += 1 if close >= previous_close else -1
+
+    return score
 
 
 def _candle_pattern(candles: list[Candle]) -> str | None:
@@ -159,17 +264,37 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
     ema200_now = ema(closes, 200)
     ema20_prev, ema50_prev = previous_ema_pair(closes, 20, 50)
     _, _, macd_hist = macd(closes)
+    _, _, macd_hist_prev = macd(closes[:-1])
     lower_band, middle_band, upper_band = bollinger_bands(closes)
     momentum = momentum_pct(closes)
     avg_volume = sma(volumes[:-1], 20)
     volume_change_pct = ((last.volume - avg_volume) / avg_volume) * 100 if avg_volume else 0.0
     price_change_pct = ((last.close - previous.close) / previous.close) * 100
     support, resistance = _swing_levels(candles)
+    structure = _market_structure(candles)
+    trend_score = _trend_score(
+        last.close,
+        previous.close,
+        ema20_now,
+        ema50_now,
+        ema200_now,
+        ema20_prev,
+        ema50_prev,
+        macd_hist,
+        macd_hist_prev,
+        momentum,
+        volume_change_pct,
+        support,
+        resistance,
+        structure,
+    )
     candle_pattern = _candle_pattern(candles)
 
     return TimeframeAnalysis(
         timeframe=timeframe,
-        trend=_trend(last.close, ema20_now, ema50_now, ema200_now, macd_hist),
+        trend=_trend_from_score(trend_score),
+        trend_score=trend_score,
+        structure=structure,
         close=last.close,
         change_pct=price_change_pct,
         rsi=last_rsi,
@@ -210,11 +335,19 @@ def analyze_symbol(symbol: str, candles_by_timeframe: dict[str, list[Candle]]) -
     return SymbolAnalysis(symbol=symbol, timeframes=analyses)
 
 
-def _trend_label(trend: str) -> str:
-    if trend == "bullish":
+def _trend_label(item: TimeframeAnalysis) -> str:
+    if item.trend == "bullish":
+        if item.trend_score >= 8:
+            return "GÜÇLÜ YÜKSELİŞ 🟢"
         return "YÜKSELİŞ 🟢"
-    if trend == "bearish":
+    if item.trend == "bearish":
+        if item.trend_score <= -8:
+            return "GÜÇLÜ DÜŞÜŞ 🔴"
         return "ZAYIF 🔴"
+    if item.trend_score >= 3:
+        return "TOPARLANMA 🟢"
+    if item.trend_score <= -3:
+        return "ZAYIFLAMA 🔴"
     return "NÖTR 🟡"
 
 
@@ -268,6 +401,8 @@ def _decision(item: TimeframeAnalysis, cost: float | None, altcoin_blocked: bool
         return "BTC 4H ZAYIF - BEKLE"
     if item.close <= item.support:
         return "RISK VAR"
+    if item.trend_score <= -5:
+        return "BEKLE"
     near_support_pct = ((item.close - item.support) / item.support) * 100 if item.support else 999
     reversal_pattern = item.candle_pattern in {"Hammer", "Bullish Engulfing"}
     if near_support_pct <= 1.5 and item.rsi <= 50 and reversal_pattern:
@@ -278,8 +413,14 @@ def _decision(item: TimeframeAnalysis, cost: float | None, altcoin_blocked: bool
         pnl = ((item.close - cost) / cost) * 100
         if pnl >= 2.0:
             return "KISMİ SAT"
+    if item.trend_score >= 6 and item.close >= item.ema20:
+        return "TREND TAKİBİ"
+    if item.trend_score >= 3 and item.close >= item.ema20 and item.rsi < 68:
+        return "ERKEN TAKİP"
     if item.trend == "bullish" and item.close >= item.resistance:
         return "TAKIP ET"
+    if item.trend_score <= -3:
+        return "BEKLE"
     if cost is not None and item.close < cost:
         return "BEKLE"
     if item.trend == "neutral":
@@ -313,12 +454,16 @@ def _rise_signal(
     flow_positive = flow.price_change_pct >= 0.15 and flow.quote_volume > 0
     confirm_positive = bool(confirm and confirm.price_change_pct > 0)
     rsi_ok = item_15m.rsi < 70 and item_1h.rsi < 70
-    trend_ok = item_1h.trend == "bullish" or item_4h.trend == "bullish"
+    trend_ok = item_1h.trend_score >= 3 or item_4h.trend_score >= 3
     near_breakout = item_15m.close >= item_15m.resistance * 0.995
     momentum_ok = item_15m.momentum_pct > 0 or item_1h.momentum_pct > 0
 
+    if flow_positive and rsi_ok and item_15m.trend_score >= 3 and item_1h.trend_score >= 3:
+        return "Trend erken güçleniyor 🟢"
     if flow_positive and rsi_ok and (confirm_positive or trend_ok or near_breakout):
         return "Yükseliş sinyali var 🟢"
+    if near_breakout and momentum_ok and rsi_ok:
+        return "Kırılım yaklaşıyor 🟢"
     return None
 
 
@@ -350,7 +495,7 @@ def _btc_4h_bearish(analyses: list[SymbolAnalysis]) -> bool:
             continue
         for item in symbol_analysis.timeframes:
             if item.timeframe == "4h":
-                return item.trend == "bearish"
+                return item.trend == "bearish" or item.trend_score <= -4
     return False
 
 
@@ -375,13 +520,13 @@ def _crash_warning(
     score = 0
     reasons: list[str] = []
 
-    if item_15m.trend == "bearish" or item_15m.close < item_15m.ema20:
+    if item_15m.trend_score <= -3 or item_15m.close < item_15m.ema20:
         score += 1
         reasons.append("BTC 15M zayif")
-    if item_1h.trend == "bearish" or item_1h.close < item_1h.ema20:
+    if item_1h.trend_score <= -3 or item_1h.close < item_1h.ema20:
         score += 1
         reasons.append("BTC 1H zayif")
-    if item_4h.trend == "bearish" or item_4h.close <= item_4h.support * 1.02:
+    if item_4h.trend_score <= -4 or item_4h.close <= item_4h.support * 1.02:
         score += 1
         reasons.append("BTC 4H riskli")
     if flow and flow.price_change_pct <= -0.20:
@@ -596,8 +741,9 @@ def build_report(
 
         for item in symbol_analysis.timeframes:
             lines.append(
-                f"{_timeframe_label(item.timeframe)}: {_trend_label(item.trend)} | "
-                f"RSI {item.rsi:.0f} | {_decision(item, cost, altcoin_blocked)}"
+                f"{_timeframe_label(item.timeframe)}: {_trend_label(item)} | "
+                f"Güç {item.trend_score:+d} | RSI {item.rsi:.0f} | "
+                f"{_decision(item, cost, altcoin_blocked)}"
             )
 
         lines.extend([

@@ -9,13 +9,13 @@ Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini
 - Binance public API ile BTC, Layer 1, Layer 2, AI, RWA ve DePIN sembollerini izler.
 - `15m`, `1h`, `4h` zaman dilimlerini analiz eder.
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
-- Trend yonunu `bullish`, `bearish` veya `neutral` olarak yorumlar.
+- Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
 - BTC 4H bearish/zayif ise altcoinlerde karar otomatik `BTC 4H ZAYIF - BEKLE` olur.
 - BTC 15M/1H/4H zayiflama, 5M/1H para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
 - Duzeltme geldiginde para USDT'de mi bekliyor, sektor icinde mi donuyor, baska projeye mi kayiyor ayirmaya calisir.
 - Altcoin secimi anlik 5M Binance USDT hacmi + 5M fiyat degisimine gore yapilir; 1H teyit olarak raporda gosterilir.
-- Basit destek/direnc seviyelerini son swing high/low uzerinden belirler.
+- Destek/direnc seviyelerini onceki swing high/low uzerinden belirler; son mum kirilim yaptiysa bunu daha net yakalar.
 - Riskli durumlarda uyari verir:
   - Asiri RSI
   - Ani hacim artisi
@@ -186,9 +186,9 @@ Sektor: BTC
 Fiyat: 73896
 Yükseliş sinyali var 🟢
 5M: +0.2% | 1H: -0.2%
-15M: NÖTR 🟡 | RSI 44 | ALIM BÖLGESİ
-1H: NÖTR 🟡 | RSI 55 | İZLE
-4H: NÖTR 🟡 | RSI 43 | İZLE
+15M: TOPARLANMA 🟢 | Güç +3 | RSI 44 | ERKEN TAKİP
+1H: NÖTR 🟡 | Güç +1 | RSI 55 | İZLE
+4H: ZAYIFLAMA 🔴 | Güç -3 | RSI 43 | BEKLE
 4H Destek/Direnç: 72512 / 78080
 Plan: Giriş 72512-73238 | Hedef 78080 | Risk 71425 altı
 Alarm: 15M Mum: Hammer
@@ -196,9 +196,9 @@ Alarm: 15M Mum: Hammer
 ETHUSDT
 Sektor: Layer 1
 Fiyat: 2024
-15M: NÖTR 🟡 | RSI 44 | ALIM BÖLGESİ
-1H: NÖTR 🟡 | RSI 53 | BEKLE
-4H: NÖTR 🟡 | RSI 46 | BEKLE
+15M: NÖTR 🟡 | Güç +1 | RSI 44 | ALIM BÖLGESİ
+1H: TOPARLANMA 🟢 | Güç +3 | RSI 53 | ERKEN TAKİP
+4H: NÖTR 🟡 | Güç +0 | RSI 46 | İZLE
 4H Destek/Direnç: 1967 / 2140
 Alarm: Yok
 ```
