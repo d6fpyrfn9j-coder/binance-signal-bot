@@ -11,7 +11,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
-- Gunluk trade icin yakin seviyelerden `Giriş Fiyatı`, `Çıkış Fiyatı` ve `Stop` hesaplar.
+- Gunluk trade icin yakin seviyelerden `Giriş Fiyatı`, `Tetik`, `Çıkış Fiyatı` ve `Stop` hesaplar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
@@ -201,7 +201,7 @@ Yükseliş sinyali var 🟢
 Akış: Alış 1.2M$ | Satış 1.1M$ | Net +82K$ zayıf | teyit -0.2%
 Beklenti: yukarı deneme | çıkış 78080
 Seviye: 72512 / 78080
-Trade: Hazır | Giriş Fiyatı 72512-73238 | Çıkış Fiyatı 78080 | Stop 71425
+Trade: Hazır | Giriş Bölgesi 72512-73238 | Çıkış Fiyatı 78080 | Stop 71425
 Alarm: Mum: Hammer
 
 ETHUSDT
@@ -213,7 +213,7 @@ Zincir: Binance net giriş +8.4K ETH ⚠️
 Akış: Alış 830K$ | Satış 866K$ | Net -36K$ zayıf | teyit -0.4%
 Beklenti: aşağı baskı | destek 1967
 Seviye: 1967 / 2140
-Trade: Bekle | Giriş Fiyatı 2140 üstü | Çıkış Fiyatı 2180 | Stop 1938
+Trade: Bekle | Tetik 2140 üstü | Geri Çekilme 1967-1983 | Çıkış Fiyatı 2180 | Stop(Tetik) 1938
 Alarm: Yok
 ```
 ## Notlar

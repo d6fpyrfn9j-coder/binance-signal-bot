@@ -1076,24 +1076,34 @@ def _day_trade_plan(
     risk_pct = _day_trade_risk_pct(symbol_analysis.symbol)
     near_support = close <= support * 1.012
     near_resistance = close >= resistance * 0.992
+    trigger_value = resistance * 1.001
 
     if entry_allowed and near_support:
         entry_value = close
         entry_high = min(close, support * 1.008)
         entry_text = f"{_fmt_price(support)}-{_fmt_price(entry_high)}"
+        target = _day_trade_target(entry_value, levels, risk_pct)
+        stop = _day_trade_stop(entry_value, support, risk_pct)
+        return (
+            f"Trade: Hazır | Giriş Bölgesi {entry_text} | "
+            f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
+        )
     elif entry_allowed and not near_resistance:
         entry_value = close
-        entry_text = _fmt_price(close)
-    else:
-        entry_value = resistance * 1.001
-        entry_text = f"{_fmt_price(entry_value)} üstü"
+        target = _day_trade_target(entry_value, levels, risk_pct)
+        stop = _day_trade_stop(entry_value, support, risk_pct)
+        return (
+            f"Trade: Hazır | Giriş Fiyatı {_fmt_price(close)} | "
+            f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
+        )
 
-    target = _day_trade_target(entry_value, levels, risk_pct)
-    stop = _day_trade_stop(entry_value, support, risk_pct)
-    action = "Bekle" if altcoin_blocked or not entry_allowed else "Hazır"
+    target = _day_trade_target(trigger_value, levels, risk_pct)
+    stop = _day_trade_stop(trigger_value, support, risk_pct)
+    pullback_high = min(close, support * 1.008)
+    pullback = f" | Geri Çekilme {_fmt_price(support)}-{_fmt_price(pullback_high)}" if pullback_high > support else ""
     return (
-        f"Trade: {action} | Giriş Fiyatı {entry_text} | "
-        f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
+        f"Trade: Bekle | Tetik {_fmt_price(trigger_value)} üstü{pullback} | "
+        f"Çıkış Fiyatı {_fmt_price(target)} | Stop(Tetik) {_fmt_price(stop)}"
     )
 
 
