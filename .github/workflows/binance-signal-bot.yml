@@ -3,7 +3,7 @@ name: Binance Signal Bot
 on:
   schedule:
     # Keep the scheduled workflow owned by the GitHub account.
-    - cron: "2-59/5 * * * *"
+    - cron: "3-59/5 * * * *"
   workflow_dispatch:
 
 permissions:
