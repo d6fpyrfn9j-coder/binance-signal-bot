@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
+from onchain_fetcher import OnChainFlow, StablecoinReserve
 
 
 @dataclass(frozen=True)
@@ -465,6 +466,24 @@ def _fmt_price(value: float) -> str:
     return f"{value:.2f}"
 
 
+def _fmt_amount(value: float | None, suffix: str = "") -> str:
+    if value is None:
+        return "?"
+    absolute = abs(value)
+    sign = "+" if value > 0 else "-" if value < 0 else ""
+    if absolute >= 1_000_000_000:
+        number = f"{absolute / 1_000_000_000:.1f}B"
+    elif absolute >= 1_000_000:
+        number = f"{absolute / 1_000_000:.1f}M"
+    elif absolute >= 1_000:
+        number = f"{absolute / 1_000:.1f}K"
+    elif absolute >= 100:
+        number = f"{absolute:.0f}"
+    else:
+        number = f"{absolute:.2f}".rstrip("0").rstrip(".")
+    return f"{sign}{number}{suffix}"
+
+
 def _cost_for(symbol: str, costs: dict[str, float] | None) -> float | None:
     if not costs:
         return None
@@ -552,7 +571,60 @@ def _orderbook_state(order_book: OrderBookPressure | None) -> str | None:
     return None
 
 
-def _fake_risk_score(item: TimeframeAnalysis, order_book: OrderBookPressure | None) -> int:
+def _onchain_sell_pressure(flow: OnChainFlow | None) -> bool:
+    if not flow or flow.netflow is None:
+        return False
+    return flow.netflow > 0 and (flow.netflow_change_pct is None or flow.netflow_change_pct >= -20)
+
+
+def _onchain_accumulation(flow: OnChainFlow | None) -> bool:
+    if not flow or flow.netflow is None:
+        return False
+    return flow.netflow < 0
+
+
+def _stablecoin_buy_power(stablecoin_reserve: StablecoinReserve | None) -> bool:
+    if not stablecoin_reserve:
+        return False
+    change = stablecoin_reserve.reserve_usd_change_pct
+    if change is None:
+        change = stablecoin_reserve.reserve_change_pct
+    return bool(change is not None and change >= 0.2)
+
+
+def _stablecoin_line(stablecoin_reserve: StablecoinReserve | None) -> str | None:
+    if not stablecoin_reserve:
+        return None
+    change = stablecoin_reserve.reserve_usd_change_pct
+    value = stablecoin_reserve.reserve_usd
+    if change is None:
+        change = stablecoin_reserve.reserve_change_pct
+        value = stablecoin_reserve.reserve
+    if change is None:
+        return None
+    if change >= 0.2:
+        return f"Zincir: Binance stablecoin +{change:.1f}% | alım gücü artıyor 🟢"
+    if change <= -0.2:
+        return f"Zincir: Binance stablecoin {change:.1f}% | nakit çıkışı ⚠️"
+    return f"Zincir: Stablecoin yatay | {_fmt_amount(value, '$')}"
+
+
+def _onchain_line(flow: OnChainFlow | None) -> str | None:
+    if not flow or flow.netflow is None:
+        return None
+    amount = _fmt_amount(flow.netflow, f" {flow.asset}")
+    if flow.netflow > 0:
+        return f"Zincir: Binance net giriş {amount} ⚠️"
+    if flow.netflow < 0:
+        return f"Zincir: Binance net çıkış {amount} ✅"
+    return "Zincir: Net akış yatay"
+
+
+def _fake_risk_score(
+    item: TimeframeAnalysis,
+    order_book: OrderBookPressure | None,
+    onchain_flow: OnChainFlow | None = None,
+) -> int:
     score = 0
     if item.fake_rise_risk:
         score += 2
@@ -568,10 +640,16 @@ def _fake_risk_score(item: TimeframeAnalysis, order_book: OrderBookPressure | No
         and order_book.nearest_sell_wall_quote > order_book.nearest_buy_wall_quote * 1.5
     ):
         score += 1
+    if _onchain_sell_pressure(onchain_flow) and item.change_pct >= 0:
+        score += 2
     return score
 
 
-def _footprint_line(symbol_analysis: SymbolAnalysis, order_book: OrderBookPressure | None) -> str | None:
+def _footprint_line(
+    symbol_analysis: SymbolAnalysis,
+    order_book: OrderBookPressure | None,
+    onchain_flow: OnChainFlow | None = None,
+) -> str | None:
     frames = _timeframe_map(symbol_analysis)
     item = frames.get("15m") or frames.get("1h")
     if not item:
@@ -595,7 +673,12 @@ def _footprint_line(symbol_analysis: SymbolAnalysis, order_book: OrderBookPressu
     if state := _orderbook_state(order_book):
         signals.append(state)
 
-    if _fake_risk_score(item, order_book) >= 3:
+    if _onchain_sell_pressure(onchain_flow):
+        signals.append("Zincir satış baskısı")
+    elif _onchain_accumulation(onchain_flow):
+        signals.append("Zincir birikim")
+
+    if _fake_risk_score(item, order_book, onchain_flow) >= 3:
         signals.append("Fake YÜKSEK ⚠️")
 
     return "İz: " + " | ".join([side, *signals])
@@ -605,6 +688,8 @@ def _position_line(
     symbol_analysis: SymbolAnalysis,
     altcoin_blocked: bool,
     order_book: OrderBookPressure | None,
+    onchain_flow: OnChainFlow | None = None,
+    stablecoin_reserve: StablecoinReserve | None = None,
 ) -> str | None:
     frames = _timeframe_map(symbol_analysis)
     item_15m = frames.get("15m")
@@ -612,13 +697,21 @@ def _position_line(
     if not item_15m or not item_1h:
         return None
 
-    fake_score = max(_fake_risk_score(item_15m, order_book), _fake_risk_score(item_1h, order_book))
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book, onchain_flow),
+        _fake_risk_score(item_1h, order_book, onchain_flow),
+    )
     orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+    onchain_weak = _onchain_sell_pressure(onchain_flow)
+    onchain_strong = _onchain_accumulation(onchain_flow)
+    stablecoin_strong = _stablecoin_buy_power(stablecoin_reserve)
 
     if altcoin_blocked:
         return "Pozisyon: ZARAR RİSKİ 🔴 | BTC zayıf"
     if fake_score >= 3:
         return "Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük"
+    if onchain_weak and item_1h.trend_score <= 3:
+        return "Pozisyon: ZARAR RİSKİ 🔴 | zincir satış baskısı"
     if item_1h.trend_score <= -5 or (item_15m.trend_score <= -5 and item_1h.trend_score <= -3):
         return "Pozisyon: ZARAR RİSKİ 🔴 | trend düşüşte"
     if item_15m.taker_delta_pct <= -15 and item_1h.trend_score <= 0:
@@ -628,9 +721,17 @@ def _position_line(
         and item_15m.trend_score >= 3
         and item_15m.taker_delta_pct >= 0
         and not orderbook_weak
+        and not onchain_weak
     ):
         return "Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek"
-    if item_1h.trend_score >= 3 and item_15m.trend_score >= 0 and item_15m.taker_delta_pct >= -5:
+    if (
+        item_1h.trend_score >= 3
+        and item_15m.trend_score >= 0
+        and item_15m.taker_delta_pct >= -5
+        and not onchain_weak
+    ):
+        if onchain_strong or stablecoin_strong:
+            return "Pozisyon: KÂR BEKLENTİSİ 🟢 | zincir destekli"
         return "Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H toparlıyor"
     return "Pozisyon: BELİRSİZ 🟡 | izle"
 
@@ -891,6 +992,8 @@ def build_report(
     flow_stats: dict[str, MarketStat] | None = None,
     confirm_stats: dict[str, MarketStat] | None = None,
     order_books: dict[str, OrderBookPressure] | None = None,
+    onchain_flows: dict[str, OnChainFlow] | None = None,
+    stablecoin_reserve: StablecoinReserve | None = None,
 ) -> str:
     report_time = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     btc_4h_bearish = _btc_4h_bearish(analyses)
@@ -908,6 +1011,8 @@ def build_report(
         lines.append(flow_text)
     if rotation_text := _correction_rotation(analyses, sectors, flow_stats, confirm_stats):
         lines.append(rotation_text)
+    if stablecoin_text := _stablecoin_line(stablecoin_reserve):
+        lines.append(stablecoin_text)
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
@@ -915,6 +1020,7 @@ def build_report(
         sector = sectors.get(symbol_analysis.symbol) if sectors else None
         altcoin_blocked = (btc_4h_bearish or btc_unavailable) and symbol_analysis.symbol != "BTCUSDT"
         order_book = order_books.get(symbol_analysis.symbol) if order_books else None
+        onchain_flow = onchain_flows.get(symbol_analysis.symbol) if onchain_flows else None
         alarm_lines = [
             alarm
             for item in symbol_analysis.timeframes
@@ -927,8 +1033,21 @@ def build_report(
             symbol_analysis.symbol,
             *([f"Sektor: {sector}"] if sector else []),
             f"Fiyat: {_fmt_price(last_item.close)}",
-            *([position] if (position := _position_line(symbol_analysis, altcoin_blocked, order_book)) else []),
-            *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book)) else []),
+            *(
+                [position]
+                if (
+                    position := _position_line(
+                        symbol_analysis,
+                        altcoin_blocked,
+                        order_book,
+                        onchain_flow,
+                        stablecoin_reserve,
+                    )
+                )
+                else []
+            ),
+            *([onchain] if (onchain := _onchain_line(onchain_flow)) else []),
+            *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book, onchain_flow)) else []),
             *([rise_signal] if rise_signal else []),
             *(
                 [

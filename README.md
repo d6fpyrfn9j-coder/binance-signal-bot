@@ -12,6 +12,7 @@ Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - 1H beklenti gucluyse `Pozisyon: KÂR BEKLENTİSİ`, trend zayifsa `Pozisyon: ZARAR RİSKİ` yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
+- `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
 - BTC 4H bearish/zayif ise altcoinlerde karar otomatik `BTC 4H ZAYIF - BEKLE` olur.
 - BTC 15M/1H/4H zayiflama, 5M/1H para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
@@ -60,6 +61,7 @@ cp .env.example .env
 ```bash
 TELEGRAM_BOT_TOKEN=bot_token
 TELEGRAM_CHAT_ID=chat_id
+CRYPTOQUANT_API_KEY=
 BTCUSDT_COST=
 ETHUSDT_COST=2049
 SOLUSDT_COST=
@@ -81,6 +83,8 @@ python3 telegram_setup.py
 ```
 
 3. Cikan `CHAT_ID=...` degerini `.env` icindeki `TELEGRAM_CHAT_ID` alanina yaz.
+
+CryptoQuant kullanacaksan `CRYPTOQUANT_API_KEY` alanina access token ekle. Eklenmezse bot zincir ustu veriyi atlar ve Binance verisiyle calismaya devam eder.
 
 3. Tek sefer test et.
 
@@ -189,6 +193,7 @@ BTCUSDT
 Sektor: BTC
 Fiyat: 73896
 Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek
+Zincir: Binance net çıkış -1.2K BTC ✅
 İz: Alıcı %56 | OB alış duvarı
 Yükseliş sinyali var 🟢
 5M: +0.2% | 1H: -0.2%
@@ -203,6 +208,7 @@ ETHUSDT
 Sektor: Layer 1
 Fiyat: 2024
 Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük
+Zincir: Binance net giriş +8.4K ETH ⚠️
 İz: Satıcı %57 | Dağıtım riski | Fake YÜKSEK ⚠️
 15M: NÖTR 🟡 | Güç +1 | RSI 44 | ALIM BÖLGESİ
 1H: TOPARLANMA 🟢 | Güç +3 | RSI 53 | ERKEN TAKİP

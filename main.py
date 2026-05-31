@@ -18,6 +18,7 @@ from data_fetcher import (
     fetch_order_book_pressure,
     fetch_recent_flow_stats,
 )
+from onchain_fetcher import OnChainFlow, StablecoinReserve, fetch_onchain_flows, fetch_stablecoin_reserve
 from telegram_sender import send_telegram_message
 
 
@@ -86,6 +87,8 @@ def create_report() -> str:
     confirm_stats = load_confirm_stats()
     symbols = select_symbols(flow_stats)
     order_books = load_order_books(symbols)
+    onchain_flows = load_onchain_flows(symbols)
+    stablecoin_reserve = load_stablecoin_reserve()
     logging.info("Selected symbols: %s", ", ".join(symbols))
 
     for symbol in symbols:
@@ -111,6 +114,8 @@ def create_report() -> str:
         flow_stats=flow_stats,
         confirm_stats=confirm_stats,
         order_books=order_books,
+        onchain_flows=onchain_flows,
+        stablecoin_reserve=stablecoin_reserve,
     )
 
 
@@ -144,6 +149,22 @@ def load_order_books(symbols: tuple[str, ...]) -> dict[str, OrderBookPressure]:
     except Exception:
         logging.exception("Could not fetch order book pressure")
         return {}
+
+
+def load_onchain_flows(symbols: tuple[str, ...]) -> dict[str, OnChainFlow]:
+    try:
+        return fetch_onchain_flows(symbols)
+    except Exception:
+        logging.exception("Could not fetch on-chain flows")
+        return {}
+
+
+def load_stablecoin_reserve() -> StablecoinReserve | None:
+    try:
+        return fetch_stablecoin_reserve()
+    except Exception:
+        logging.exception("Could not fetch stablecoin reserve")
+        return None
 
 
 def select_symbols(stats: dict[str, MarketStat]) -> tuple[str, ...]:
