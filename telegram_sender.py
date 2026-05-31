@@ -8,9 +8,19 @@ import urllib.error
 import urllib.request
 
 
+def _clean_token(value: str) -> str:
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:_-")
+    return "".join(char for char in value if char in allowed)
+
+
+def _clean_chat_id(value: str) -> str:
+    allowed = set("0123456789-")
+    return "".join(char for char in value if char in allowed)
+
+
 def send_telegram_message(token: str, chat_id: str, text: str) -> None:
-    token = "".join(token.split())
-    chat_id = "".join(chat_id.split())
+    token = _clean_token(token)
+    chat_id = _clean_chat_id(chat_id)
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps(
         {
