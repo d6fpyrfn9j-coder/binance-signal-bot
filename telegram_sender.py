@@ -9,6 +9,8 @@ import urllib.request
 
 
 def send_telegram_message(token: str, chat_id: str, text: str) -> None:
+    token = token.strip()
+    chat_id = chat_id.strip()
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps(
         {
@@ -32,4 +34,3 @@ def send_telegram_message(token: str, chat_id: str, text: str) -> None:
         raise RuntimeError(f"Telegram HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Telegram network error: {exc.reason}") from exc
-
