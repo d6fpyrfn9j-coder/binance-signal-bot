@@ -6,7 +6,7 @@ import datetime as dt
 from dataclasses import dataclass
 
 from data_fetcher import Candle
-from data_fetcher import MarketStat
+from data_fetcher import MarketStat, OrderBookPressure
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 
 
@@ -29,6 +29,10 @@ class TimeframeAnalysis:
     bollinger_middle: float
     bollinger_upper: float
     volume_change_pct: float
+    taker_buy_ratio: float
+    taker_delta_pct: float
+    fake_rise_risk: bool
+    distribution_risk: bool
     support: float
     resistance: float
     candle_pattern: str | None
@@ -114,6 +118,7 @@ def _trend_score(
     macd_hist_prev: float,
     momentum: float,
     volume_change_pct: float,
+    taker_delta_pct: float,
     support: float,
     resistance: float,
     structure: str,
@@ -158,7 +163,69 @@ def _trend_score(
     if volume_change_pct >= 50:
         score += 1 if close >= previous_close else -1
 
+    if taker_delta_pct >= 10:
+        score += 1
+    elif taker_delta_pct <= -10:
+        score -= 1
+
+    if close > previous_close and taker_delta_pct <= -10:
+        score -= 1
+
     return score
+
+
+def _quote_volume(candle: Candle) -> float:
+    return candle.quote_volume or candle.close * candle.volume
+
+
+def _taker_buy_ratio(candles: list[Candle], lookback: int = 5) -> float:
+    recent = candles[-lookback:]
+    total_quote = sum(_quote_volume(candle) for candle in recent)
+    buy_quote = sum(candle.taker_buy_quote_volume for candle in recent)
+    if total_quote <= 0:
+        return 50.0
+    return (buy_quote / total_quote) * 100
+
+
+def _upper_wick_pct(candle: Candle) -> float:
+    full_range = candle.high - candle.low
+    if full_range <= 0:
+        return 0.0
+    upper_wick = candle.high - max(candle.open, candle.close)
+    return (upper_wick / full_range) * 100
+
+
+def _fake_rise_risk(
+    last: Candle,
+    previous: Candle,
+    resistance: float,
+    volume_change_pct: float,
+    taker_buy_ratio: float,
+) -> bool:
+    price_positive = last.close > previous.close
+    failed_breakout = bool(resistance and last.high > resistance and last.close < resistance)
+    weak_buying = taker_buy_ratio < 49
+    high_volume = volume_change_pct >= 50
+    upper_wick_heavy = _upper_wick_pct(last) >= 40
+    green_candle = last.close > last.open
+
+    return (
+        failed_breakout and upper_wick_heavy
+        or price_positive and weak_buying and high_volume
+        or green_candle and upper_wick_heavy and weak_buying
+    )
+
+
+def _distribution_risk(
+    last: Candle,
+    previous: Candle,
+    volume_change_pct: float,
+    taker_buy_ratio: float,
+    fake_rise_risk: bool,
+) -> bool:
+    price_positive = last.close >= previous.close
+    seller_control = taker_buy_ratio <= 45
+    return fake_rise_risk or (price_positive and seller_control and volume_change_pct >= 50)
 
 
 def _candle_pattern(candles: list[Candle]) -> str | None:
@@ -211,6 +278,9 @@ def _warnings(
     bollinger_lower: float,
     bollinger_upper: float,
     candle_pattern: str | None,
+    taker_delta_pct: float,
+    fake_rise_risk: bool,
+    distribution_risk: bool,
     ema20_now: float,
     ema50_now: float,
     ema20_prev: float,
@@ -237,6 +307,16 @@ def _warnings(
 
     if candle_pattern:
         warnings.append(f"Mum: {candle_pattern}")
+
+    if taker_delta_pct <= -15 and volume_change_pct >= 50:
+        warnings.append("Büyük satış izi")
+    elif taker_delta_pct >= 15 and volume_change_pct >= 50:
+        warnings.append("Büyük alım izi")
+
+    if fake_rise_risk:
+        warnings.append("Fake yükseliş riski")
+    if distribution_risk:
+        warnings.append("Dağıtım riski")
 
     crossed_up = ema20_prev <= ema50_prev and ema20_now > ema50_now
     crossed_down = ema20_prev >= ema50_prev and ema20_now < ema50_now
@@ -271,6 +351,22 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
     volume_change_pct = ((last.volume - avg_volume) / avg_volume) * 100 if avg_volume else 0.0
     price_change_pct = ((last.close - previous.close) / previous.close) * 100
     support, resistance = _swing_levels(candles)
+    taker_buy_ratio = _taker_buy_ratio(candles)
+    taker_delta_pct = (taker_buy_ratio - 50) * 2
+    fake_rise_risk = _fake_rise_risk(
+        last,
+        previous,
+        resistance,
+        volume_change_pct,
+        taker_buy_ratio,
+    )
+    distribution_risk = _distribution_risk(
+        last,
+        previous,
+        volume_change_pct,
+        taker_buy_ratio,
+        fake_rise_risk,
+    )
     structure = _market_structure(candles)
     trend_score = _trend_score(
         last.close,
@@ -284,6 +380,7 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
         macd_hist_prev,
         momentum,
         volume_change_pct,
+        taker_delta_pct,
         support,
         resistance,
         structure,
@@ -308,6 +405,10 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
         bollinger_middle=middle_band,
         bollinger_upper=upper_band,
         volume_change_pct=volume_change_pct,
+        taker_buy_ratio=taker_buy_ratio,
+        taker_delta_pct=taker_delta_pct,
+        fake_rise_risk=fake_rise_risk,
+        distribution_risk=distribution_risk,
         support=support,
         resistance=resistance,
         candle_pattern=candle_pattern,
@@ -319,6 +420,9 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
             lower_band,
             upper_band,
             candle_pattern,
+            taker_delta_pct,
+            fake_rise_risk,
+            distribution_risk,
             ema20_now,
             ema50_now,
             ema20_prev,
@@ -428,6 +532,109 @@ def _decision(item: TimeframeAnalysis, cost: float | None, altcoin_blocked: bool
     return "İZLE"
 
 
+def _orderbook_state(order_book: OrderBookPressure | None) -> str | None:
+    if not order_book:
+        return None
+    if order_book.imbalance_pct <= -20:
+        return "OB satış duvarı"
+    if order_book.imbalance_pct >= 20:
+        return "OB alış duvarı"
+    if (
+        order_book.nearest_sell_wall_quote > 0
+        and order_book.nearest_sell_wall_quote > order_book.nearest_buy_wall_quote * 1.5
+    ):
+        return "OB satış duvarı"
+    if (
+        order_book.nearest_buy_wall_quote > 0
+        and order_book.nearest_buy_wall_quote > order_book.nearest_sell_wall_quote * 1.5
+    ):
+        return "OB alış duvarı"
+    return None
+
+
+def _fake_risk_score(item: TimeframeAnalysis, order_book: OrderBookPressure | None) -> int:
+    score = 0
+    if item.fake_rise_risk:
+        score += 2
+    if item.distribution_risk:
+        score += 2
+    if item.change_pct > 0 and item.taker_delta_pct <= -10:
+        score += 1
+    if order_book and order_book.imbalance_pct <= -20:
+        score += 1
+    if (
+        order_book
+        and order_book.nearest_sell_wall_quote > 0
+        and order_book.nearest_sell_wall_quote > order_book.nearest_buy_wall_quote * 1.5
+    ):
+        score += 1
+    return score
+
+
+def _footprint_line(symbol_analysis: SymbolAnalysis, order_book: OrderBookPressure | None) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item = frames.get("15m") or frames.get("1h")
+    if not item:
+        return None
+
+    if item.taker_buy_ratio >= 50:
+        side = f"Alıcı %{item.taker_buy_ratio:.0f}"
+    else:
+        side = f"Satıcı %{100 - item.taker_buy_ratio:.0f}"
+
+    signals: list[str] = []
+    if item.volume_change_pct >= 80 and item.taker_delta_pct <= -15:
+        signals.append("Büyük satış izi")
+    elif item.volume_change_pct >= 80 and item.taker_delta_pct >= 15:
+        signals.append("Büyük alım izi")
+    elif item.distribution_risk:
+        signals.append("Dağıtım riski")
+    elif item.fake_rise_risk:
+        signals.append("Fake risk")
+
+    if state := _orderbook_state(order_book):
+        signals.append(state)
+
+    if _fake_risk_score(item, order_book) >= 3:
+        signals.append("Fake YÜKSEK ⚠️")
+
+    return "İz: " + " | ".join([side, *signals])
+
+
+def _position_line(
+    symbol_analysis: SymbolAnalysis,
+    altcoin_blocked: bool,
+    order_book: OrderBookPressure | None,
+) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    if not item_15m or not item_1h:
+        return None
+
+    fake_score = max(_fake_risk_score(item_15m, order_book), _fake_risk_score(item_1h, order_book))
+    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+
+    if altcoin_blocked:
+        return "Pozisyon: ZARAR RİSKİ 🔴 | BTC zayıf"
+    if fake_score >= 3:
+        return "Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük"
+    if item_1h.trend_score <= -5 or (item_15m.trend_score <= -5 and item_1h.trend_score <= -3):
+        return "Pozisyon: ZARAR RİSKİ 🔴 | trend düşüşte"
+    if item_15m.taker_delta_pct <= -15 and item_1h.trend_score <= 0:
+        return "Pozisyon: ZARAR RİSKİ 🔴 | satıcı baskısı"
+    if (
+        item_1h.trend_score >= 6
+        and item_15m.trend_score >= 3
+        and item_15m.taker_delta_pct >= 0
+        and not orderbook_weak
+    ):
+        return "Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek"
+    if item_1h.trend_score >= 3 and item_15m.trend_score >= 0 and item_15m.taker_delta_pct >= -5:
+        return "Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H toparlıyor"
+    return "Pozisyon: BELİRSİZ 🟡 | izle"
+
+
 def _timeframe_map(symbol_analysis: SymbolAnalysis) -> dict[str, TimeframeAnalysis]:
     return {item.timeframe: item for item in symbol_analysis.timeframes}
 
@@ -458,6 +665,8 @@ def _rise_signal(
     near_breakout = item_15m.close >= item_15m.resistance * 0.995
     momentum_ok = item_15m.momentum_pct > 0 or item_1h.momentum_pct > 0
 
+    if (item_15m.fake_rise_risk or item_15m.distribution_risk) and flow.price_change_pct > 0:
+        return "Yükseliş fake olabilir ⚠️"
     if flow_positive and rsi_ok and item_15m.trend_score >= 3 and item_1h.trend_score >= 3:
         return "Trend erken güçleniyor 🟢"
     if flow_positive and rsi_ok and (confirm_positive or trend_ok or near_breakout):
@@ -681,6 +890,7 @@ def build_report(
     market_stats: dict[str, MarketStat] | None = None,
     flow_stats: dict[str, MarketStat] | None = None,
     confirm_stats: dict[str, MarketStat] | None = None,
+    order_books: dict[str, OrderBookPressure] | None = None,
 ) -> str:
     report_time = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     btc_4h_bearish = _btc_4h_bearish(analyses)
@@ -704,6 +914,7 @@ def build_report(
         last_item = symbol_analysis.timeframes[-1]
         sector = sectors.get(symbol_analysis.symbol) if sectors else None
         altcoin_blocked = (btc_4h_bearish or btc_unavailable) and symbol_analysis.symbol != "BTCUSDT"
+        order_book = order_books.get(symbol_analysis.symbol) if order_books else None
         alarm_lines = [
             alarm
             for item in symbol_analysis.timeframes
@@ -716,6 +927,8 @@ def build_report(
             symbol_analysis.symbol,
             *([f"Sektor: {sector}"] if sector else []),
             f"Fiyat: {_fmt_price(last_item.close)}",
+            *([position] if (position := _position_line(symbol_analysis, altcoin_blocked, order_book)) else []),
+            *([footprint] if (footprint := _footprint_line(symbol_analysis, order_book)) else []),
             *([rise_signal] if rise_signal else []),
             *(
                 [

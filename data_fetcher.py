@@ -26,6 +26,10 @@ class Candle:
     close: float
     volume: float
     close_time: int
+    quote_volume: float
+    trade_count: int
+    taker_buy_base_volume: float
+    taker_buy_quote_volume: float
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,18 @@ class MarketStat:
     price_change_pct: float
     quote_volume: float
     last_price: float
+
+
+@dataclass(frozen=True)
+class OrderBookPressure:
+    symbol: str
+    bid_quote_1pct: float
+    ask_quote_1pct: float
+    imbalance_pct: float
+    nearest_buy_wall_price: float | None
+    nearest_buy_wall_quote: float
+    nearest_sell_wall_price: float | None
+    nearest_sell_wall_quote: float
 
 
 def _base_urls() -> tuple[str, ...]:
@@ -92,6 +108,10 @@ def fetch_binance_klines(symbol: str, interval: str, limit: int = 250) -> list[C
                 close=float(row[4]),
                 volume=float(row[5]),
                 close_time=int(row[6]),
+                quote_volume=float(row[7]),
+                trade_count=int(row[8]),
+                taker_buy_base_volume=float(row[9]),
+                taker_buy_quote_volume=float(row[10]),
             )
         )
     return candles
@@ -123,7 +143,7 @@ def fetch_recent_flow_stats(symbols: tuple[str, ...], interval: str = "1h") -> d
         previous = candles[-2]
         current = candles[-1]
         change_pct = ((current.close - previous.close) / previous.close) * 100 if previous.close else 0.0
-        quote_volume = current.close * current.volume
+        quote_volume = current.quote_volume or current.close * current.volume
         stats[symbol] = MarketStat(
             symbol=symbol,
             price_change_pct=change_pct,
@@ -131,3 +151,55 @@ def fetch_recent_flow_stats(symbols: tuple[str, ...], interval: str = "1h") -> d
             last_price=current.close,
         )
     return stats
+
+
+def _wall(levels: list[tuple[float, float]]) -> tuple[float | None, float]:
+    if not levels:
+        return None, 0.0
+    quotes = [(price, price * quantity) for price, quantity in levels]
+    avg_quote = sum(quote for _, quote in quotes) / len(quotes)
+    price, quote = max(quotes, key=lambda item: item[1])
+    if avg_quote <= 0 or quote < avg_quote * 3:
+        return None, 0.0
+    return price, quote
+
+
+def fetch_order_book_pressure(symbols: tuple[str, ...], limit: int = 100) -> dict[str, OrderBookPressure]:
+    pressures: dict[str, OrderBookPressure] = {}
+    for symbol in symbols:
+        params = urllib.parse.urlencode({"symbol": symbol.upper(), "limit": limit})
+        path = f"/api/v3/depth?{params}"
+        logging.info("Fetching %s order book", symbol)
+        row = _http_json(path, timeout=10)
+
+        bids = [(float(price), float(quantity)) for price, quantity in row.get("bids", [])]
+        asks = [(float(price), float(quantity)) for price, quantity in row.get("asks", [])]
+        if not bids or not asks:
+            continue
+
+        best_bid = bids[0][0]
+        best_ask = asks[0][0]
+        mid_price = (best_bid + best_ask) / 2
+        bid_floor = mid_price * 0.99
+        ask_ceiling = mid_price * 1.01
+        nearby_bids = [(price, quantity) for price, quantity in bids if price >= bid_floor]
+        nearby_asks = [(price, quantity) for price, quantity in asks if price <= ask_ceiling]
+
+        bid_quote = sum(price * quantity for price, quantity in nearby_bids)
+        ask_quote = sum(price * quantity for price, quantity in nearby_asks)
+        total_quote = bid_quote + ask_quote
+        imbalance_pct = ((bid_quote - ask_quote) / total_quote) * 100 if total_quote else 0.0
+        buy_wall_price, buy_wall_quote = _wall(nearby_bids)
+        sell_wall_price, sell_wall_quote = _wall(nearby_asks)
+
+        pressures[symbol] = OrderBookPressure(
+            symbol=symbol,
+            bid_quote_1pct=bid_quote,
+            ask_quote_1pct=ask_quote,
+            imbalance_pct=imbalance_pct,
+            nearest_buy_wall_price=buy_wall_price,
+            nearest_buy_wall_quote=buy_wall_quote,
+            nearest_sell_wall_price=sell_wall_price,
+            nearest_sell_wall_quote=sell_wall_quote,
+        )
+    return pressures

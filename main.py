@@ -10,7 +10,14 @@ import time
 from pathlib import Path
 
 from analyzer import analyze_symbol, build_report
-from data_fetcher import MarketStat, fetch_24hr_stats, fetch_binance_klines, fetch_recent_flow_stats
+from data_fetcher import (
+    MarketStat,
+    OrderBookPressure,
+    fetch_24hr_stats,
+    fetch_binance_klines,
+    fetch_order_book_pressure,
+    fetch_recent_flow_stats,
+)
 from telegram_sender import send_telegram_message
 
 
@@ -78,6 +85,7 @@ def create_report() -> str:
     flow_stats = load_flow_stats()
     confirm_stats = load_confirm_stats()
     symbols = select_symbols(flow_stats)
+    order_books = load_order_books(symbols)
     logging.info("Selected symbols: %s", ", ".join(symbols))
 
     for symbol in symbols:
@@ -102,6 +110,7 @@ def create_report() -> str:
         market_stats=market_stats,
         flow_stats=flow_stats,
         confirm_stats=confirm_stats,
+        order_books=order_books,
     )
 
 
@@ -126,6 +135,14 @@ def load_confirm_stats() -> dict[str, MarketStat]:
         return fetch_recent_flow_stats(ALL_SYMBOLS, interval="1h")
     except Exception:
         logging.exception("Could not fetch 1h confirmation stats")
+        return {}
+
+
+def load_order_books(symbols: tuple[str, ...]) -> dict[str, OrderBookPressure]:
+    try:
+        return fetch_order_book_pressure(symbols)
+    except Exception:
+        logging.exception("Could not fetch order book pressure")
         return {}
 
 

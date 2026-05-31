@@ -10,6 +10,8 @@ Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini
 - `15m`, `1h`, `4h` zaman dilimlerini analiz eder.
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
+- 1H beklenti gucluyse `Pozisyon: KÂR BEKLENTİSİ`, trend zayifsa `Pozisyon: ZARAR RİSKİ` yazar.
+- Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
 - BTC 4H bearish/zayif ise altcoinlerde karar otomatik `BTC 4H ZAYIF - BEKLE` olur.
 - BTC 15M/1H/4H zayiflama, 5M/1H para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
@@ -23,6 +25,8 @@ Bu bot al-sat islemi yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerini
   - Bollinger bant temasi
   - Momentum gucu/zayifligi
   - Doji, Hammer, Engulfing mumlari
+  - Buyuk alis/satis izi
+  - Fake yukselis ve dagitim riski
 - Telegram Bot API ile rapor gonderir.
 - Varsayilan olarak her 5 dakikada bir otomatik calisir.
 - `.env` dosyasindan `TELEGRAM_BOT_TOKEN` ve `TELEGRAM_CHAT_ID` okur.
@@ -184,6 +188,8 @@ Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor
 BTCUSDT
 Sektor: BTC
 Fiyat: 73896
+Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek
+İz: Alıcı %56 | OB alış duvarı
 Yükseliş sinyali var 🟢
 5M: +0.2% | 1H: -0.2%
 15M: TOPARLANMA 🟢 | Güç +3 | RSI 44 | ERKEN TAKİP
@@ -196,6 +202,8 @@ Alarm: 15M Mum: Hammer
 ETHUSDT
 Sektor: Layer 1
 Fiyat: 2024
+Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük
+İz: Satıcı %57 | Dağıtım riski | Fake YÜKSEK ⚠️
 15M: NÖTR 🟡 | Güç +1 | RSI 44 | ALIM BÖLGESİ
 1H: TOPARLANMA 🟢 | Güç +3 | RSI 53 | ERKEN TAKİP
 4H: NÖTR 🟡 | Güç +0 | RSI 46 | İZLE
