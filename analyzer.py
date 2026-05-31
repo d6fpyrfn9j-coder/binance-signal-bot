@@ -1016,6 +1016,14 @@ def _crash_warning(
 
     score = 0
     reasons: list[str] = []
+    support_broken = item_4h.close <= item_4h.support or item_1h.close <= item_1h.support
+    near_support = (
+        not support_broken
+        and (
+            item_4h.close <= item_4h.support * 1.02
+            or item_1h.close <= item_1h.support * 1.01
+        )
+    )
 
     if item_15m.trend_score <= -3 or item_15m.close < item_15m.ema20:
         score += 1
@@ -1023,9 +1031,15 @@ def _crash_warning(
     if item_1h.trend_score <= -3 or item_1h.close < item_1h.ema20:
         score += 1
         reasons.append("BTC trend zayif")
-    if item_4h.trend_score <= -4 or item_4h.close <= item_4h.support * 1.02:
+    if item_4h.trend_score <= -4:
         score += 1
-        reasons.append("BTC ana destek riskli")
+        reasons.append("BTC ana trend zayif")
+    if support_broken:
+        score += 2
+        reasons.append("destek kirildi")
+    elif near_support:
+        score += 1
+        reasons.append("destek yakin")
     if flow and flow.price_change_pct <= -0.20:
         score += 1
         reasons.append(f"5M para cikisi {flow.price_change_pct:+.1f}%")
@@ -1039,10 +1053,12 @@ def _crash_warning(
         score += 1
         reasons.append("kisa destek dibinde")
 
-    if score >= 4:
+    if score >= 4 and support_broken:
         return "Çöküş riski YÜKSEK ⚠️ " + " | ".join(reasons[:3])
+    if score >= 4:
+        return "Destek kırılmadı, risk artıyor ⚠️ " + " | ".join(reasons[:3])
     if score >= 3:
-        return "Çöküş erken uyarı ⚠️ " + " | ".join(reasons[:3])
+        return "Zayıflama uyarısı ⚠️ " + " | ".join(reasons[:3])
     return None
 
 
