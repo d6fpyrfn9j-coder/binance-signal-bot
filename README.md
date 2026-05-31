@@ -7,7 +7,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 ## Ozellikler
 
 - Binance public API ile BTC, Layer 1, Layer 2, AI, RWA ve DePIN sembollerini izler.
-- `15m`, `1h`, `4h` zaman dilimlerini analiz eder.
+- Kisa, orta ve ana trend verilerini icerde analiz eder.
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.

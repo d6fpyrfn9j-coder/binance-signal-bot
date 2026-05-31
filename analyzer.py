@@ -627,7 +627,7 @@ def _alarm_short(item: TimeframeAnalysis, cost: float | None) -> str | None:
 
 def _decision(item: TimeframeAnalysis, cost: float | None, altcoin_blocked: bool = False) -> str:
     if altcoin_blocked:
-        return "BTC 4H ZAYIF - BEKLE"
+        return "BTC ZAYIF - BEKLE"
     if item.close <= item.support:
         return "RISK VAR"
     if item.trend_score <= -5:
@@ -829,7 +829,7 @@ def _position_line(
         and not orderbook_weak
         and not onchain_weak
     ):
-        return "Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H yüksek"
+        return "Pozisyon: KÂR BEKLENTİSİ 🟢 | trend güçlü"
     if (
         item_1h.trend_score >= 3
         and item_15m.trend_score >= 0
@@ -838,7 +838,7 @@ def _position_line(
     ):
         if onchain_strong or stablecoin_strong:
             return "Pozisyon: KÂR BEKLENTİSİ 🟢 | zincir destekli"
-        return "Pozisyon: KÂR BEKLENTİSİ 🟢 | 1H toparlıyor"
+        return "Pozisyon: KÂR BEKLENTİSİ 🟢 | trend toparlıyor"
     return "Pozisyon: BELİRSİZ 🟡 | izle"
 
 
@@ -896,7 +896,7 @@ def _entry_decision(
         and not onchain_weak
         and (flow_amount is None or flow_amount >= 25_000)
     ):
-        reason = "1H güçlü"
+        reason = "trend güçlü"
         if onchain_strong or stablecoin_strong:
             reason = "zincir destekli"
         return f"Giriş: EVET 🟢 | {reason}", True

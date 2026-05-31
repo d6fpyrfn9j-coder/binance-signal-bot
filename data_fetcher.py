@@ -97,7 +97,7 @@ def fetch_binance_klines(symbol: str, interval: str, limit: int = 250) -> list[C
         }
     )
     path = f"/api/v3/klines?{params}"
-    logging.info("Fetching %s %s candles", symbol, interval)
+    logging.debug("Fetching candle data for %s", symbol)
     rows = _http_json(path)
 
     candles: list[Candle] = []

@@ -139,7 +139,7 @@ def load_confirm_stats() -> dict[str, MarketStat]:
     try:
         return fetch_recent_flow_stats(ALL_SYMBOLS, interval="1h")
     except Exception:
-        logging.exception("Could not fetch 1h confirmation stats")
+        logging.exception("Could not fetch confirmation stats")
         return {}
 
 
