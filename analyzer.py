@@ -759,6 +759,31 @@ def _fake_risk_score(
     return score
 
 
+def _fake_or_sell_pressure_reason(
+    item_15m: TimeframeAnalysis,
+    item_1h: TimeframeAnalysis,
+) -> str:
+    frames = (item_15m, item_1h)
+    falling_pressure = any(
+        item.change_pct < 0
+        and (
+            item.trend_score <= -3
+            or item.close <= item.bollinger_lower
+            or item.taker_delta_pct <= -10
+        )
+        for item in frames
+    )
+    suspicious_rise = any(
+        (item.fake_rise_risk or item.distribution_risk)
+        and item.change_pct >= 0
+        for item in frames
+    )
+
+    if falling_pressure and not suspicious_rise:
+        return "satış baskısı"
+    return "fake/dağıtım riski"
+
+
 def _footprint_line(
     symbol_analysis: SymbolAnalysis,
     order_book: OrderBookPressure | None,
@@ -823,6 +848,9 @@ def _position_line(
     if altcoin_blocked:
         return "Pozisyon: ZARAR RİSKİ 🔴 | BTC zayıf"
     if fake_score >= 3:
+        reason = _fake_or_sell_pressure_reason(item_15m, item_1h)
+        if reason == "satış baskısı":
+            return "Pozisyon: ZARAR RİSKİ 🔴 | satış baskısı"
         return "Pozisyon: FAKE RİSKİ ⚠️ | kar güveni düşük"
     if onchain_weak and item_1h.trend_score <= 3:
         return "Pozisyon: ZARAR RİSKİ 🔴 | zincir satış baskısı"
@@ -884,7 +912,8 @@ def _entry_decision(
     if altcoin_blocked:
         return "Giriş: HAYIR 🔴 | BTC zayıf", False
     if fake_score >= 3:
-        return "Giriş: HAYIR 🔴 | fake/dağıtım riski", False
+        reason = _fake_or_sell_pressure_reason(item_15m, item_1h)
+        return f"Giriş: HAYIR 🔴 | {reason}", False
     if onchain_weak and item_1h.trend_score <= 3:
         return "Giriş: HAYIR 🔴 | zincir satış baskısı", False
     if item_1h.trend_score <= -5 or (item_15m.trend_score <= -5 and item_1h.trend_score <= -3):
