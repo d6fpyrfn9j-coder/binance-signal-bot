@@ -19,3 +19,28 @@ services:
         sync: false
       - key: SOLUSDT_COST
         sync: false
+  - type: worker
+    name: binance-signal-worker
+    runtime: python
+    region: frankfurt
+    buildCommand: "python -m pip install -r requirements.txt"
+    startCommand: "python websocket_worker.py"
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: CRYPTOQUANT_API_KEY
+        sync: false
+      - key: REPORT_INTERVAL_SECONDS
+        value: "300"
+      - key: WORKER_WARMUP_SECONDS
+        value: "300"
+      - key: WEBSOCKET_RECONNECT_DELAY
+        value: "5"
+      - key: BTCUSDT_COST
+        sync: false
+      - key: ETHUSDT_COST
+        sync: false
+      - key: SOLUSDT_COST
+        sync: false

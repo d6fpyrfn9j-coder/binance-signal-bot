@@ -15,6 +15,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
+- WebSocket worker modunda bot surekli acik kalir, Binance `aggTrade` ve `depth20` streamlerinden akisi toplar, Telegram'a 5 dakikada bir rapor yollar.
 - `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
 - BTC ana trendi zayifsa altcoinlerde giris otomatik kapatilir.
@@ -44,6 +45,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - `indicators.py`: RSI, EMA, MACD ve ortalama hesaplari.
 - `analyzer.py`: Trend, destek/direnc ve risk uyarilari.
 - `telegram_sender.py`: Telegram mesaj gonderimi.
+- `websocket_worker.py`: Binance WebSocket akisini surekli izleyen worker.
 - `telegram_setup.py`: Bot icin chat id bulma yardimcisi.
 - `main.py`: Saatlik calisma dongusu.
 - `.env.example`: Ornek Telegram ayarlari.
@@ -184,6 +186,27 @@ Workflow her 5 dakikada bir calisir. Manuel test icin GitHub'da:
 Actions > Binance Signal Bot > Run workflow
 ```
 
+## Render WebSocket Worker
+
+Kesintisiz takip icin `render.yaml` icinde `binance-signal-worker` servisi hazirdir.
+
+Worker mantigi:
+
+```text
+WebSocket surekli acik
+Order book + alis/satis akisi hafizada
+Her 5 dakikada Telegram raporu
+```
+
+Kullanilan streamler:
+
+```text
+<symbol>@aggTrade
+<symbol>@depth20@1000ms
+```
+
+Worker canli dogrulandiktan sonra eski cron servis durdurulabilir; boylece cift mesaj gelmez.
+
 ## Rapor Ornegi
 
 ```text
@@ -220,6 +243,7 @@ Uyarı: Yok 🟢
 - Binance public API kullanildigi icin API key gerekmez.
 - Render cron mesajlari 5 dakikada bir gonderir; komut rapordan once `--pre-scan-seconds 180` ile piyasa akisini toplar.
 - REST API gecikmesine gore ornek sayisi degisir. Birebir saniyelik ve kesintisiz order book icin sonraki seviye Binance WebSocket worker kurulumudur.
+- WebSocket worker aktifse veri boslugu kalmaz; sadece Telegram raporu 5 dakikada bir gelir.
 - Telegram icin BotFather'dan bot token alman gerekir.
 - Chat ID icin kendi Telegram hesabina veya gruba botu ekleyip chat id kullanmalisin.
 - Akış satiri `Anlık Net Akış`, `Teyit Akışı` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.
