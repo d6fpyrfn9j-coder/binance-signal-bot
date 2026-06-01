@@ -12,6 +12,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
 - Gunluk trade icin yakin seviyelerden `Giriş Fiyatı`, `Tetik`, `Çıkış Fiyatı` ve `Stop` hesaplar.
+- Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
 - `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
@@ -197,8 +198,9 @@ Karar: GİRİŞ VAR 🟢 | zincir destekli
 Para: +82K$ alış 🟢
 🚀 Ekstra yükseliş yakın
 Giriş: 72512-73238 🟢
-Hedef: 78080
+Çıkış: 78080
 Stop: 71425
+Gerçek: kârda ilerliyor 🟢 | çıkış 78080
 Uyarı: Mum: Hammer ⚠️
 
 ETHUSDT
@@ -208,8 +210,9 @@ Para: -36K$ satış 🔴
 Giriş: Bekle 🟡
 Tetik: 2140 üstü 🟡
 Geri çekilme: 1967-1983
-Hedef: 2180
+Çıkış: 2180
 Stop: 1938 (tetikten sonra)
+Gerçek: tetik gelmedi | çıkış 2180
 Uyarı: Yok 🟢
 ```
 ## Notlar

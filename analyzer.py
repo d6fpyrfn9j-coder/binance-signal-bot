@@ -36,6 +36,8 @@ class TimeframeAnalysis:
     distribution_risk: bool
     support: float
     resistance: float
+    recent_high: float
+    recent_low: float
     candle_pattern: str | None
     warnings: list[str]
 
@@ -337,6 +339,9 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
     volumes = [c.volume for c in candles]
     last = candles[-1]
     previous = candles[-2]
+    recent_window = candles[-4:] if timeframe == "15m" else candles[-2:]
+    recent_high = max(c.high for c in recent_window)
+    recent_low = min(c.low for c in recent_window)
 
     last_rsi = rsi(closes)
     ema7_now = ema(closes, 7)
@@ -412,6 +417,8 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
         distribution_risk=distribution_risk,
         support=support,
         resistance=resistance,
+        recent_high=recent_high,
+        recent_low=recent_low,
         candle_pattern=candle_pattern,
         warnings=_warnings(
             last_rsi,
@@ -1236,6 +1243,73 @@ def _rocket_line(
     return None
 
 
+def _trade_setup_values(
+    symbol_analysis: SymbolAnalysis,
+    entry_allowed: bool,
+) -> tuple[float, float, float, float, bool] | None:
+    day_levels = _day_trade_levels(symbol_analysis)
+    if not day_levels:
+        return None
+
+    close, support, resistance, levels = day_levels
+    risk_pct = _day_trade_risk_pct(symbol_analysis.symbol)
+    near_support = close <= support * 1.012
+    near_resistance = close >= resistance * 0.992
+
+    if entry_allowed and near_support:
+        entry_value = close
+        needs_trigger = False
+    elif entry_allowed and not near_resistance:
+        entry_value = close
+        needs_trigger = False
+    else:
+        entry_value = resistance * 1.001
+        needs_trigger = True
+
+    target = _day_trade_target(entry_value, levels, risk_pct)
+    stop = _day_trade_stop(entry_value, support, risk_pct)
+    return entry_value, target, stop, support, needs_trigger
+
+
+def _real_trade_check_line(
+    symbol_analysis: SymbolAnalysis,
+    entry_allowed: bool,
+) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    setup = _trade_setup_values(symbol_analysis, entry_allowed)
+    if not item_15m or not setup:
+        return None
+
+    entry_value, target, stop, _, needs_trigger = setup
+    close = item_15m.close
+    recent_high = item_15m.recent_high
+    recent_low = item_15m.recent_low
+
+    if needs_trigger:
+        if recent_high < entry_value:
+            return f"Gerçek: tetik gelmedi | çıkış {_fmt_price(target)}"
+        if recent_high >= target:
+            return f"Gerçek: tetik + çıkış görüldü 🟢"
+        if recent_low <= stop:
+            return f"Gerçek: tetik görüldü, stop riski 🔴"
+        return f"Gerçek: tetik görüldü | çıkış {_fmt_price(target)}"
+
+    if recent_high >= target:
+        return f"Gerçek: çıkış görüldü 🟢"
+    if recent_low <= stop:
+        return f"Gerçek: stop bölgesi görüldü 🔴"
+    if close > entry_value and target > entry_value:
+        progress = ((close - entry_value) / (target - entry_value)) * 100
+        if progress >= 50:
+            return f"Gerçek: kârda ilerliyor 🟢 | çıkış {_fmt_price(target)}"
+    if close < entry_value and entry_value > stop:
+        risk_used = ((entry_value - close) / (entry_value - stop)) * 100
+        if risk_used >= 60:
+            return f"Gerçek: stopa yakın 🔴 | stop {_fmt_price(stop)}"
+    return f"Gerçek: işlem bekliyor | çıkış {_fmt_price(target)}"
+
+
 def _simple_trade_lines(
     symbol_analysis: SymbolAnalysis,
     entry_allowed: bool,
@@ -1273,7 +1347,7 @@ def _simple_trade_lines(
         if pullback_high > support:
             lines.append(f"Geri çekilme: {_fmt_price(support)}-{_fmt_price(pullback_high)}")
     lines.extend([
-        f"Hedef: {_fmt_price(target)}",
+        f"Çıkış: {_fmt_price(target)}",
         f"{stop_label}: {_fmt_price(stop)}" + (" (tetikten sonra)" if not entry_allowed else ""),
     ])
     return lines
@@ -1552,6 +1626,11 @@ def build_report(
                 else []
             ),
             *_simple_trade_lines(symbol_analysis, entry_allowed),
+            *(
+                [real_check]
+                if (real_check := _real_trade_check_line(symbol_analysis, entry_allowed))
+                else []
+            ),
             _simple_alarm_line(alarm_lines),
         ])
     return "\n".join(lines)
