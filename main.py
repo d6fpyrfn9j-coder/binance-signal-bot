@@ -366,7 +366,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pre-scan-seconds",
         type=int,
-        default=int(os.getenv("PRE_SCAN_SECONDS", "0")),
+        default=int(os.getenv("PRE_SCAN_SECONDS", "180")),
         help="Collect order book and trade-flow samples before sending the report",
     )
     parser.add_argument(
