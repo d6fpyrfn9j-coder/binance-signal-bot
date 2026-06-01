@@ -13,6 +13,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
 - Gunluk trade icin yakin seviyelerden `Giriş Fiyatı`, `Tetik`, `Çıkış Fiyatı` ve `Stop` hesaplar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
+- Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
 - `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
 - BTC ana trendi zayifsa altcoinlerde giris otomatik kapatilir.
@@ -214,6 +215,8 @@ Uyarı: Yok 🟢
 ## Notlar
 
 - Binance public API kullanildigi icin API key gerekmez.
+- Render cron mesajlari 5 dakikada bir gonderir; komut rapordan once `--pre-scan-seconds 180` ile piyasa akisini toplar.
+- REST API gecikmesine gore ornek sayisi degisir. Birebir saniyelik ve kesintisiz order book icin sonraki seviye Binance WebSocket worker kurulumudur.
 - Telegram icin BotFather'dan bot token alman gerekir.
 - Chat ID icin kendi Telegram hesabina veya gruba botu ekleyip chat id kullanmalisin.
 - Akış satiri `Anlık Net Akış`, `Teyit Akışı` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.

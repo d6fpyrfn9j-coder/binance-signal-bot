@@ -7,6 +7,8 @@ import argparse
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 from analyzer import analyze_symbol, build_report
@@ -17,6 +19,7 @@ from data_fetcher import (
     fetch_binance_klines,
     fetch_order_book_pressure,
     fetch_recent_flow_stats,
+    fetch_recent_trade_flow,
 )
 from onchain_fetcher import OnChainFlow, StablecoinReserve, fetch_onchain_flows, fetch_stablecoin_reserve
 from telegram_sender import send_telegram_message
@@ -53,6 +56,85 @@ SECTORS = {
 }
 
 
+@dataclass
+class FlowAccumulator:
+    symbol: str
+    taker_buy_quote_volume: float = 0.0
+    taker_sell_quote_volume: float = 0.0
+    first_price: float | None = None
+    last_price: float | None = None
+
+    def add(self, stat: MarketStat) -> None:
+        if self.first_price is None and stat.last_price > 0:
+            self.first_price = stat.last_price
+        if stat.last_price > 0:
+            self.last_price = stat.last_price
+        self.taker_buy_quote_volume += stat.taker_buy_quote_volume
+        self.taker_sell_quote_volume += stat.taker_sell_quote_volume
+
+    def to_market_stat(self) -> MarketStat | None:
+        quote_volume = self.taker_buy_quote_volume + self.taker_sell_quote_volume
+        if quote_volume <= 0 or self.last_price is None:
+            return None
+        first_price = self.first_price or self.last_price
+        change_pct = ((self.last_price - first_price) / first_price) * 100 if first_price else 0.0
+        return MarketStat(
+            symbol=self.symbol,
+            price_change_pct=change_pct,
+            quote_volume=quote_volume,
+            last_price=self.last_price,
+            taker_buy_quote_volume=self.taker_buy_quote_volume,
+            taker_sell_quote_volume=self.taker_sell_quote_volume,
+            net_taker_quote_volume=self.taker_buy_quote_volume - self.taker_sell_quote_volume,
+        )
+
+
+@dataclass
+class OrderBookAccumulator:
+    symbol: str
+    samples: int = 0
+    bid_quote_1pct: float = 0.0
+    ask_quote_1pct: float = 0.0
+    imbalance_pct: float = 0.0
+    nearest_buy_wall_price: float | None = None
+    nearest_buy_wall_quote: float = 0.0
+    nearest_sell_wall_price: float | None = None
+    nearest_sell_wall_quote: float = 0.0
+
+    def add(self, pressure: OrderBookPressure) -> None:
+        self.samples += 1
+        self.bid_quote_1pct += pressure.bid_quote_1pct
+        self.ask_quote_1pct += pressure.ask_quote_1pct
+        self.imbalance_pct += pressure.imbalance_pct
+        if pressure.nearest_buy_wall_quote > self.nearest_buy_wall_quote:
+            self.nearest_buy_wall_quote = pressure.nearest_buy_wall_quote
+            self.nearest_buy_wall_price = pressure.nearest_buy_wall_price
+        if pressure.nearest_sell_wall_quote > self.nearest_sell_wall_quote:
+            self.nearest_sell_wall_quote = pressure.nearest_sell_wall_quote
+            self.nearest_sell_wall_price = pressure.nearest_sell_wall_price
+
+    def to_order_book_pressure(self) -> OrderBookPressure | None:
+        if self.samples <= 0:
+            return None
+        return OrderBookPressure(
+            symbol=self.symbol,
+            bid_quote_1pct=self.bid_quote_1pct / self.samples,
+            ask_quote_1pct=self.ask_quote_1pct / self.samples,
+            imbalance_pct=self.imbalance_pct / self.samples,
+            nearest_buy_wall_price=self.nearest_buy_wall_price,
+            nearest_buy_wall_quote=self.nearest_buy_wall_quote,
+            nearest_sell_wall_price=self.nearest_sell_wall_price,
+            nearest_sell_wall_quote=self.nearest_sell_wall_quote,
+        )
+
+
+@dataclass(frozen=True)
+class MarketScan:
+    flow_stats: dict[str, MarketStat]
+    order_books: dict[str, OrderBookPressure]
+    samples: int
+
+
 def load_env(path: str = ".env") -> None:
     env_path = Path(path)
     if not env_path.exists():
@@ -79,14 +161,23 @@ def setup_logging() -> None:
     )
 
 
-def create_report() -> str:
+def create_report(scan: MarketScan | None = None) -> str:
     analyses = []
     btc_unavailable = False
     market_stats = load_market_stats()
     flow_stats = load_flow_stats()
+    if scan and scan.flow_stats:
+        flow_stats.update(scan.flow_stats)
     confirm_stats = load_confirm_stats()
     symbols = select_symbols(flow_stats)
-    order_books = load_order_books(symbols)
+    order_books = {
+        symbol: pressure
+        for symbol, pressure in (scan.order_books.items() if scan else [])
+        if symbol in symbols
+    }
+    missing_order_books = tuple(symbol for symbol in symbols if symbol not in order_books)
+    if missing_order_books:
+        order_books.update(load_order_books(missing_order_books))
     onchain_flows = load_onchain_flows(symbols)
     stablecoin_reserve = load_stablecoin_reserve()
     logging.info("Selected symbols: %s", ", ".join(symbols))
@@ -151,6 +242,58 @@ def load_order_books(symbols: tuple[str, ...]) -> dict[str, OrderBookPressure]:
         return {}
 
 
+def scan_market(symbols: tuple[str, ...], duration_seconds: int, scan_interval: float) -> MarketScan | None:
+    if duration_seconds <= 0:
+        return None
+
+    interval = max(scan_interval, 1.0)
+    flow_accumulators = {symbol: FlowAccumulator(symbol) for symbol in symbols}
+    order_book_accumulators = {symbol: OrderBookAccumulator(symbol) for symbol in symbols}
+    sample_count = 0
+    started_at = time.monotonic()
+    last_trade_end_ms = int(time.time() * 1000) - int(interval * 1000)
+    logging.info("Pre-scanning market for %ss every %.1fs", duration_seconds, interval)
+
+    while time.monotonic() - started_at < duration_seconds:
+        sample_started = time.monotonic()
+        trade_end_ms = int(time.time() * 1000)
+        trade_start_ms = max(last_trade_end_ms + 1, trade_end_ms - int((interval + 2) * 1000))
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            order_book_future = executor.submit(fetch_order_book_pressure, symbols)
+            trade_flow_future = executor.submit(fetch_recent_trade_flow, symbols, trade_start_ms, trade_end_ms)
+            order_books = order_book_future.result()
+            trade_stats = trade_flow_future.result()
+        last_trade_end_ms = trade_end_ms
+
+        for symbol, pressure in order_books.items():
+            order_book_accumulators[symbol].add(pressure)
+        for symbol, stat in trade_stats.items():
+            flow_accumulators[symbol].add(stat)
+
+        sample_count += 1
+        if sample_count == 1 or sample_count % 30 == 0:
+            logging.info("Market pre-scan samples: %s", sample_count)
+
+        elapsed = time.monotonic() - sample_started
+        sleep_seconds = interval - elapsed
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
+
+    flow_stats = {
+        symbol: stat
+        for symbol, accumulator in flow_accumulators.items()
+        if (stat := accumulator.to_market_stat())
+    }
+    order_books = {
+        symbol: pressure
+        for symbol, accumulator in order_book_accumulators.items()
+        if (pressure := accumulator.to_order_book_pressure())
+    }
+    logging.info("Market pre-scan completed with %s samples", sample_count)
+    return MarketScan(flow_stats=flow_stats, order_books=order_books, samples=sample_count)
+
+
 def load_onchain_flows(symbols: tuple[str, ...]) -> dict[str, OnChainFlow]:
     try:
         return fetch_onchain_flows(symbols)
@@ -196,8 +339,13 @@ def load_costs() -> dict[str, float]:
     return costs
 
 
-def run_once(send_to_telegram: bool = True) -> str:
-    report = create_report()
+def run_once(
+    send_to_telegram: bool = True,
+    pre_scan_seconds: int = 0,
+    scan_interval: float = 1.0,
+) -> str:
+    scan = scan_market(ALL_SYMBOLS, pre_scan_seconds, scan_interval)
+    report = create_report(scan=scan)
     logging.info("Report created")
 
     if send_to_telegram:
@@ -215,6 +363,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--once", action="store_true", help="Run once and exit")
     parser.add_argument("--no-telegram", action="store_true", help="Print only, do not send Telegram")
     parser.add_argument("--interval", type=int, default=300, help="Loop interval in seconds")
+    parser.add_argument(
+        "--pre-scan-seconds",
+        type=int,
+        default=int(os.getenv("PRE_SCAN_SECONDS", "0")),
+        help="Collect order book and trade-flow samples before sending the report",
+    )
+    parser.add_argument(
+        "--scan-interval",
+        type=float,
+        default=float(os.getenv("SCAN_INTERVAL_SECONDS", "1")),
+        help="Seconds between market pre-scan samples",
+    )
     return parser.parse_args()
 
 
@@ -226,7 +386,11 @@ def main() -> int:
 
     while True:
         try:
-            report = run_once(send_to_telegram=not args.no_telegram)
+            report = run_once(
+                send_to_telegram=not args.no_telegram,
+                pre_scan_seconds=args.pre_scan_seconds,
+                scan_interval=args.scan_interval,
+            )
             try:
                 print(report, flush=True)
             except BrokenPipeError:

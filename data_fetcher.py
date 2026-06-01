@@ -8,6 +8,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 
@@ -172,42 +173,127 @@ def _wall(levels: list[tuple[float, float]]) -> tuple[float | None, float]:
     return price, quote
 
 
+def _fetch_order_book_pressure_one(symbol: str, limit: int = 100) -> OrderBookPressure | None:
+    params = urllib.parse.urlencode({"symbol": symbol.upper(), "limit": limit})
+    path = f"/api/v3/depth?{params}"
+    logging.debug("Fetching %s order book", symbol)
+    row = _http_json(path, timeout=10)
+
+    bids = [(float(price), float(quantity)) for price, quantity in row.get("bids", [])]
+    asks = [(float(price), float(quantity)) for price, quantity in row.get("asks", [])]
+    if not bids or not asks:
+        return None
+
+    best_bid = bids[0][0]
+    best_ask = asks[0][0]
+    mid_price = (best_bid + best_ask) / 2
+    bid_floor = mid_price * 0.99
+    ask_ceiling = mid_price * 1.01
+    nearby_bids = [(price, quantity) for price, quantity in bids if price >= bid_floor]
+    nearby_asks = [(price, quantity) for price, quantity in asks if price <= ask_ceiling]
+
+    bid_quote = sum(price * quantity for price, quantity in nearby_bids)
+    ask_quote = sum(price * quantity for price, quantity in nearby_asks)
+    total_quote = bid_quote + ask_quote
+    imbalance_pct = ((bid_quote - ask_quote) / total_quote) * 100 if total_quote else 0.0
+    buy_wall_price, buy_wall_quote = _wall(nearby_bids)
+    sell_wall_price, sell_wall_quote = _wall(nearby_asks)
+
+    return OrderBookPressure(
+        symbol=symbol,
+        bid_quote_1pct=bid_quote,
+        ask_quote_1pct=ask_quote,
+        imbalance_pct=imbalance_pct,
+        nearest_buy_wall_price=buy_wall_price,
+        nearest_buy_wall_quote=buy_wall_quote,
+        nearest_sell_wall_price=sell_wall_price,
+        nearest_sell_wall_quote=sell_wall_quote,
+    )
+
+
 def fetch_order_book_pressure(symbols: tuple[str, ...], limit: int = 100) -> dict[str, OrderBookPressure]:
     pressures: dict[str, OrderBookPressure] = {}
-    for symbol in symbols:
-        params = urllib.parse.urlencode({"symbol": symbol.upper(), "limit": limit})
-        path = f"/api/v3/depth?{params}"
-        logging.info("Fetching %s order book", symbol)
-        row = _http_json(path, timeout=10)
-
-        bids = [(float(price), float(quantity)) for price, quantity in row.get("bids", [])]
-        asks = [(float(price), float(quantity)) for price, quantity in row.get("asks", [])]
-        if not bids or not asks:
-            continue
-
-        best_bid = bids[0][0]
-        best_ask = asks[0][0]
-        mid_price = (best_bid + best_ask) / 2
-        bid_floor = mid_price * 0.99
-        ask_ceiling = mid_price * 1.01
-        nearby_bids = [(price, quantity) for price, quantity in bids if price >= bid_floor]
-        nearby_asks = [(price, quantity) for price, quantity in asks if price <= ask_ceiling]
-
-        bid_quote = sum(price * quantity for price, quantity in nearby_bids)
-        ask_quote = sum(price * quantity for price, quantity in nearby_asks)
-        total_quote = bid_quote + ask_quote
-        imbalance_pct = ((bid_quote - ask_quote) / total_quote) * 100 if total_quote else 0.0
-        buy_wall_price, buy_wall_quote = _wall(nearby_bids)
-        sell_wall_price, sell_wall_quote = _wall(nearby_asks)
-
-        pressures[symbol] = OrderBookPressure(
-            symbol=symbol,
-            bid_quote_1pct=bid_quote,
-            ask_quote_1pct=ask_quote,
-            imbalance_pct=imbalance_pct,
-            nearest_buy_wall_price=buy_wall_price,
-            nearest_buy_wall_quote=buy_wall_quote,
-            nearest_sell_wall_price=sell_wall_price,
-            nearest_sell_wall_quote=sell_wall_quote,
-        )
+    workers = min(max(len(symbols), 1), 8)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_fetch_order_book_pressure_one, symbol, limit): symbol
+            for symbol in symbols
+        }
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                pressure = future.result()
+            except Exception:
+                logging.exception("Could not fetch %s order book", symbol)
+                continue
+            if pressure:
+                pressures[symbol] = pressure
     return pressures
+
+
+def _fetch_recent_trade_flow_one(
+    symbol: str,
+    start_time_ms: int,
+    end_time_ms: int,
+) -> MarketStat | None:
+    params = urllib.parse.urlencode(
+        {
+            "symbol": symbol.upper(),
+            "startTime": start_time_ms,
+            "endTime": end_time_ms,
+            "limit": 1000,
+        }
+    )
+    rows = _http_json(f"/api/v3/aggTrades?{params}", timeout=10)
+    if not rows:
+        return None
+
+    taker_buy_quote = 0.0
+    taker_sell_quote = 0.0
+    first_price = float(rows[0].get("p", 0) or 0)
+    last_price = first_price
+    for row in rows:
+        price = float(row.get("p", 0) or 0)
+        quantity = float(row.get("q", 0) or 0)
+        quote = price * quantity
+        last_price = price
+        if row.get("m"):
+            taker_sell_quote += quote
+        else:
+            taker_buy_quote += quote
+
+    change_pct = ((last_price - first_price) / first_price) * 100 if first_price else 0.0
+    quote_volume = taker_buy_quote + taker_sell_quote
+    return MarketStat(
+        symbol=symbol,
+        price_change_pct=change_pct,
+        quote_volume=quote_volume,
+        last_price=last_price,
+        taker_buy_quote_volume=taker_buy_quote,
+        taker_sell_quote_volume=taker_sell_quote,
+        net_taker_quote_volume=taker_buy_quote - taker_sell_quote,
+    )
+
+
+def fetch_recent_trade_flow(
+    symbols: tuple[str, ...],
+    start_time_ms: int,
+    end_time_ms: int,
+) -> dict[str, MarketStat]:
+    stats: dict[str, MarketStat] = {}
+    workers = min(max(len(symbols), 1), 8)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_fetch_recent_trade_flow_one, symbol, start_time_ms, end_time_ms): symbol
+            for symbol in symbols
+        }
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                stat = future.result()
+            except Exception:
+                logging.exception("Could not fetch %s trade flow", symbol)
+                continue
+            if stat:
+                stats[symbol] = stat
+    return stats
