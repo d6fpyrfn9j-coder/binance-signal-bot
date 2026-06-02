@@ -1524,13 +1524,17 @@ def _real_trade_check_line(
     recent_low = item_15m.recent_low
 
     if needs_trigger:
-        if recent_high < entry_value:
+        trigger_closed = close >= entry_value
+        trigger_touched = recent_high >= entry_value
+        if not trigger_touched:
             return f"Gerçek: tetik gelmedi | hedef {_fmt_price(target)}"
+        if not trigger_closed:
+            return f"Gerçek: tetik dokundu, 15m kapanış yok 🟡"
         if recent_high >= target:
             return f"Gerçek: tetik + hedef görüldü 🟢"
         if recent_low <= stop:
             return f"Gerçek: tetik görüldü, stop riski 🔴"
-        return f"Gerçek: tetik görüldü | hedef {_fmt_price(target)}"
+        return f"Gerçek: 15m kapanışla tetik görüldü | hedef {_fmt_price(target)}"
 
     if recent_high >= target:
         return f"Gerçek: hedef görüldü 🟢"
@@ -1579,7 +1583,7 @@ def _simple_trade_lines(
     entry_emoji = "🟢" if entry_allowed else "🟡"
     lines = [f"Giriş: {entry} {entry_emoji}"]
     if not entry_allowed:
-        lines.append(f"Tetik: {_fmt_price(entry_value)} üstü 🟡")
+        lines.append(f"Tetik: 15m kapanış {_fmt_price(entry_value)} üstü 🟡")
         pullback_high = min(close, support * 1.008)
         if pullback_high > support:
             lines.append(f"Geri çekilme: {_fmt_price(support)}-{_fmt_price(pullback_high)}")
