@@ -21,6 +21,7 @@ from data_fetcher import (
     fetch_recent_flow_stats,
     fetch_recent_trade_flow,
 )
+from macro_fetcher import MarketContext, fetch_market_context
 from onchain_fetcher import OnChainFlow, StablecoinReserve, fetch_onchain_flows, fetch_stablecoin_reserve
 from telegram_sender import send_telegram_message
 
@@ -180,6 +181,7 @@ def create_report(scan: MarketScan | None = None) -> str:
         order_books.update(load_order_books(missing_order_books))
     onchain_flows = load_onchain_flows(symbols)
     stablecoin_reserve = load_stablecoin_reserve()
+    market_context = load_market_context()
     logging.info("Selected symbols: %s", ", ".join(symbols))
 
     for symbol in symbols:
@@ -207,6 +209,7 @@ def create_report(scan: MarketScan | None = None) -> str:
         order_books=order_books,
         onchain_flows=onchain_flows,
         stablecoin_reserve=stablecoin_reserve,
+        market_context=market_context,
     )
 
 
@@ -307,6 +310,14 @@ def load_stablecoin_reserve() -> StablecoinReserve | None:
         return fetch_stablecoin_reserve()
     except Exception:
         logging.exception("Could not fetch stablecoin reserve")
+        return None
+
+
+def load_market_context() -> MarketContext | None:
+    try:
+        return fetch_market_context()
+    except Exception:
+        logging.exception("Could not fetch market context")
         return None
 
 

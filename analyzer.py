@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
+from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
+from signal_tracker import SignalCandidate, track_signals
 
 
 @dataclass(frozen=True)
@@ -1091,7 +1093,7 @@ def _forecast_line(
     if close <= support:
         return f"Beklenti: destek altı zayıf | toparlanma {_fmt_price(support)} üstü"
     if buy_pressure:
-        return f"Beklenti: yukarı deneme | çıkış {_fmt_price(target)}"
+        return f"Beklenti: yukarı deneme | hedef {_fmt_price(target)}"
     if sell_pressure:
         return f"Beklenti: aşağı baskı | destek {_fmt_price(support)}"
     if close >= resistance * 0.99:
@@ -1122,7 +1124,7 @@ def _day_trade_plan(
         stop = _day_trade_stop(entry_value, support, risk_pct)
         return (
             f"Trade: Hazır | Giriş Bölgesi {entry_text} | "
-            f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
+            f"Hedef Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
         )
     elif entry_allowed and not near_resistance:
         entry_value = close
@@ -1130,7 +1132,7 @@ def _day_trade_plan(
         stop = _day_trade_stop(entry_value, support, risk_pct)
         return (
             f"Trade: Hazır | Giriş Fiyatı {_fmt_price(close)} | "
-            f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
+            f"Hedef Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)}"
         )
 
     target = _day_trade_target(trigger_value, levels, risk_pct)
@@ -1139,7 +1141,7 @@ def _day_trade_plan(
     pullback = f" | Geri Çekilme {_fmt_price(support)}-{_fmt_price(pullback_high)}" if pullback_high > support else ""
     return (
         f"Trade: Bekle | Tetik {_fmt_price(trigger_value)} üstü{pullback} | "
-        f"Çıkış Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)} (tetikten sonra)"
+        f"Hedef Fiyatı {_fmt_price(target)} | Stop {_fmt_price(stop)} (tetikten sonra)"
     )
 
 
@@ -1173,6 +1175,237 @@ def _simple_total_flow_line(flow_stats: dict[str, MarketStat] | None) -> str | N
         f"Para: {direction} {_fmt_amount(net, '$')} | "
         f"Alış {_fmt_abs_amount(buy_total, '$')} / Satış {_fmt_abs_amount(sell_total, '$')}"
     )
+
+
+def _clamp(value: int, low: int = 0, high: int = 100) -> int:
+    return max(low, min(high, value))
+
+
+def _score_emoji(score: int) -> str:
+    if score >= 70:
+        return "🟢"
+    if score >= 45:
+        return "🟡"
+    return "🔴"
+
+
+def _rr_emoji(rr: float | None) -> str:
+    if rr is None or rr < 1:
+        return "🔴"
+    if rr >= 2:
+        return "🟢"
+    return "🟡"
+
+
+def _risk_reward_ratio(setup: tuple[float, float, float, float, bool] | None) -> float | None:
+    if not setup:
+        return None
+    entry, target, stop, _, _ = setup
+    risk = entry - stop
+    reward = target - entry
+    if risk <= 0 or reward <= 0:
+        return 0.0
+    return reward / risk
+
+
+def _news_impact(market_context: MarketContext | None) -> int:
+    if not market_context:
+        return 0
+    return sum(signal.impact for signal in market_context.news_signals)
+
+
+def _news_filter_line(market_context: MarketContext | None) -> str:
+    if not market_context or not market_context.news_signals:
+        return "Haber: veri yok 🟡"
+    parts = [f"{signal.topic} {signal.label}" for signal in market_context.news_signals[:3]]
+    return "Haber: " + " | ".join(parts)
+
+
+def _btc_dominance_line(market_context: MarketContext | None) -> str | None:
+    if not market_context or market_context.btc_dominance_pct is None:
+        return None
+    return f"BTC.D: {market_context.btc_dominance_pct:.1f}%"
+
+
+def _market_mode_line(
+    crash_text: str | None,
+    btc_4h_bearish: bool,
+    btc_unavailable: bool,
+    confidence_scores: list[int],
+    market_context: MarketContext | None,
+) -> str:
+    confidence = round(sum(confidence_scores) / len(confidence_scores)) if confidence_scores else 0
+    news_impact = _news_impact(market_context)
+
+    if (
+        btc_unavailable
+        or confidence < 35
+        or news_impact <= -16
+        or (crash_text and "YÜKSEK" in crash_text)
+    ):
+        mode = "🔴 NAKİTTE KAL"
+    elif btc_4h_bearish or crash_text or confidence < 60 or news_impact < -4:
+        mode = "🟡 DİKKAT"
+    else:
+        mode = "🟢 RİSK AÇIK"
+
+    return f"PİYASA MODU: {mode} | Güven {confidence}/100 {_score_emoji(confidence)}"
+
+
+def _confidence_score(
+    symbol_analysis: SymbolAnalysis,
+    entry_allowed: bool,
+    altcoin_blocked: bool,
+    order_book: OrderBookPressure | None,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    onchain_flow: OnChainFlow | None,
+    stablecoin_reserve: StablecoinReserve | None,
+    market_context: MarketContext | None,
+    rr: float | None,
+) -> int:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    if not item_15m or not item_1h or not item_4h:
+        return 0
+
+    score = 50
+    score += item_15m.trend_score * 2
+    score += item_1h.trend_score * 3
+    score += item_4h.trend_score
+    score += 10 if entry_allowed else -5
+
+    if altcoin_blocked:
+        score -= 25
+
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    if flow_amount is not None:
+        if flow_amount >= 500_000:
+            score += 10
+        elif flow_amount >= 100_000:
+            score += 6
+        elif flow_amount <= -500_000:
+            score -= 12
+        elif flow_amount <= -100_000:
+            score -= 8
+
+    confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
+    if confirm:
+        if confirm.price_change_pct >= 0.3:
+            score += 5
+        elif confirm.price_change_pct <= -0.3:
+            score -= 5
+
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book, onchain_flow),
+        _fake_risk_score(item_1h, order_book, onchain_flow),
+    )
+    score -= fake_score * 6
+
+    if order_book:
+        score += int(max(min(order_book.imbalance_pct / 4, 8), -8))
+
+    if _onchain_sell_pressure(onchain_flow):
+        score -= 10
+    elif _onchain_accumulation(onchain_flow):
+        score += 6
+
+    if _stablecoin_buy_power(stablecoin_reserve):
+        score += 4
+
+    if item_15m.rsi >= 75:
+        score -= 10
+    elif 42 <= item_15m.rsi <= 64:
+        score += 3
+
+    if rr is not None:
+        if rr >= 3:
+            score += 8
+        elif rr >= 2:
+            score += 5
+        elif rr < 1:
+            score -= 20
+
+    score += _news_impact(market_context)
+    if altcoin_blocked:
+        score = min(score, 40)
+    elif not entry_allowed:
+        score = min(score, 55)
+    if rr is not None and rr < 1:
+        score = min(score, 40)
+    return _clamp(score)
+
+
+def _confidence_line(confidence: int, rr: float | None) -> str:
+    rr_text = "?" if rr is None else f"1:{rr:.1f}"
+    return f"Güven: {confidence}/100 {_score_emoji(confidence)} | R/R {rr_text} {_rr_emoji(rr)}"
+
+
+def _fake_pump_line(
+    symbol_analysis: SymbolAnalysis,
+    order_book: OrderBookPressure | None,
+    onchain_flow: OnChainFlow | None,
+) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    if not item_15m or not item_1h:
+        return None
+
+    score = max(
+        _fake_risk_score(item_15m, order_book, onchain_flow),
+        _fake_risk_score(item_1h, order_book, onchain_flow),
+    )
+    if score >= 3:
+        return "Fake pump: Yüksek 🔴"
+    if score >= 1:
+        return "Fake pump: Orta 🟡"
+    return "Fake pump: Düşük 🟢"
+
+
+def _big_order_line(order_book: OrderBookPressure | None) -> str | None:
+    if not order_book:
+        return None
+
+    buy_quote = order_book.nearest_buy_wall_quote or order_book.bid_quote_1pct
+    sell_quote = order_book.nearest_sell_wall_quote or order_book.ask_quote_1pct
+    if buy_quote <= 0 and sell_quote <= 0:
+        return None
+
+    if sell_quote > buy_quote * 1.25:
+        emoji = "🔴"
+    elif buy_quote > sell_quote * 1.25:
+        emoji = "🟢"
+    else:
+        emoji = "🟡"
+    return f"Büyük emir: Alış {_fmt_abs_amount(buy_quote, '$')} / Satış {_fmt_abs_amount(sell_quote, '$')} {emoji}"
+
+
+def _protection_line(
+    setup: tuple[float, float, float, float, bool] | None,
+    close: float,
+    entry_allowed: bool,
+) -> str | None:
+    if not setup:
+        return None
+    entry, target, stop, _, _ = setup
+    if entry <= 0:
+        return None
+
+    risk_pct = ((entry - stop) / entry) * 100
+    reward_pct = ((target - entry) / entry) * 100
+    if not entry_allowed:
+        return "Koruma: işlem yok, zarar korunur 🟢"
+
+    if target > entry and close > entry:
+        progress = ((close - entry) / (target - entry)) * 100
+        if progress >= 70:
+            return "Koruma: hedefe yakın, kâr koru 🟢"
+
+    return f"Koruma: risk -{risk_pct:.1f}% | ödül +{reward_pct:.1f}%"
 
 
 def _simple_decision_line(entry_line: str) -> str:
@@ -1288,26 +1521,26 @@ def _real_trade_check_line(
 
     if needs_trigger:
         if recent_high < entry_value:
-            return f"Gerçek: tetik gelmedi | çıkış {_fmt_price(target)}"
+            return f"Gerçek: tetik gelmedi | hedef {_fmt_price(target)}"
         if recent_high >= target:
-            return f"Gerçek: tetik + çıkış görüldü 🟢"
+            return f"Gerçek: tetik + hedef görüldü 🟢"
         if recent_low <= stop:
             return f"Gerçek: tetik görüldü, stop riski 🔴"
-        return f"Gerçek: tetik görüldü | çıkış {_fmt_price(target)}"
+        return f"Gerçek: tetik görüldü | hedef {_fmt_price(target)}"
 
     if recent_high >= target:
-        return f"Gerçek: çıkış görüldü 🟢"
+        return f"Gerçek: hedef görüldü 🟢"
     if recent_low <= stop:
         return f"Gerçek: stop bölgesi görüldü 🔴"
     if close > entry_value and target > entry_value:
         progress = ((close - entry_value) / (target - entry_value)) * 100
         if progress >= 50:
-            return f"Gerçek: kârda ilerliyor 🟢 | çıkış {_fmt_price(target)}"
+            return f"Gerçek: kârda ilerliyor 🟢 | hedef {_fmt_price(target)}"
     if close < entry_value and entry_value > stop:
         risk_used = ((entry_value - close) / (entry_value - stop)) * 100
         if risk_used >= 60:
             return f"Gerçek: stopa yakın 🔴 | stop {_fmt_price(stop)}"
-    return f"Gerçek: işlem bekliyor | çıkış {_fmt_price(target)}"
+    return f"Gerçek: işlem bekliyor | hedef {_fmt_price(target)}"
 
 
 def _simple_trade_lines(
@@ -1347,7 +1580,7 @@ def _simple_trade_lines(
         if pullback_high > support:
             lines.append(f"Geri çekilme: {_fmt_price(support)}-{_fmt_price(pullback_high)}")
     lines.extend([
-        f"Çıkış: {_fmt_price(target)}",
+        f"Hedef: {_fmt_price(target)}",
         f"{stop_label}: {_fmt_price(stop)}" + (" (tetikten sonra)" if not entry_allowed else ""),
     ])
     return lines
@@ -1571,17 +1804,15 @@ def build_report(
     order_books: dict[str, OrderBookPressure] | None = None,
     onchain_flows: dict[str, OnChainFlow] | None = None,
     stablecoin_reserve: StablecoinReserve | None = None,
+    market_context: MarketContext | None = None,
 ) -> str:
     report_time = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     btc_4h_bearish = _btc_4h_bearish(analyses)
     crash_text = _crash_warning(analyses, flow_stats, confirm_stats)
-    lines = [
-        "KRIPTO RAPORU",
-        report_time,
-        _simple_market_line(crash_text, btc_4h_bearish, btc_unavailable),
-    ]
-    if flow_text := _simple_total_flow_line(flow_stats):
-        lines.append(flow_text)
+    prepared: list[dict[str, object]] = []
+    candidates: list[SignalCandidate] = []
+    confidence_scores: list[int] = []
+    news_impact = _news_impact(market_context)
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
@@ -1604,13 +1835,124 @@ def build_report(
             onchain_flow,
             stablecoin_reserve,
         )
+        if entry_allowed and news_impact <= -12:
+            entry_line = "Giriş: BEKLE 🟡 | haber riski"
+            entry_allowed = False
+
+        setup = _trade_setup_values(symbol_analysis, entry_allowed)
+        rr = _risk_reward_ratio(setup)
+        if entry_allowed and rr is not None and rr < 1:
+            entry_line = "Giriş: HAYIR 🔴 | R/R düşük"
+            entry_allowed = False
+            setup = _trade_setup_values(symbol_analysis, entry_allowed)
+            rr = _risk_reward_ratio(setup)
+
+        confidence = _confidence_score(
+            symbol_analysis,
+            entry_allowed,
+            altcoin_blocked,
+            order_book,
+            flow_stats,
+            confirm_stats,
+            onchain_flow,
+            stablecoin_reserve,
+            market_context,
+            rr,
+        )
+        confidence_scores.append(confidence)
+
+        frames = _timeframe_map(symbol_analysis)
+        item_15m = frames.get("15m")
+        if setup and item_15m:
+            entry, target, stop, _, _ = setup
+            candidates.append(
+                SignalCandidate(
+                    symbol=symbol_analysis.symbol,
+                    entry=entry,
+                    target=target,
+                    stop=stop,
+                    current_price=display_close,
+                    recent_high=item_15m.recent_high,
+                    recent_low=item_15m.recent_low,
+                    confidence=confidence,
+                    rr=rr or 0.0,
+                    active=entry_allowed and confidence >= 45,
+                )
+            )
+
+        prepared.append(
+            {
+                "symbol_analysis": symbol_analysis,
+                "display_close": display_close,
+                "entry_line": entry_line,
+                "entry_allowed": entry_allowed,
+                "altcoin_blocked": altcoin_blocked,
+                "order_book": order_book,
+                "onchain_flow": onchain_flow,
+                "alarm_lines": alarm_lines,
+                "confidence": confidence,
+                "rr": rr,
+                "setup": setup,
+            }
+        )
+
+    signal_result = track_signals(candidates)
+    lines = [
+        "KRIPTO RAPORU",
+        report_time,
+        _market_mode_line(crash_text, btc_4h_bearish, btc_unavailable, confidence_scores, market_context),
+        signal_result.summary_line,
+    ]
+
+    macro_parts = []
+    if btc_line := _btc_dominance_line(market_context):
+        macro_parts.append(btc_line)
+    macro_parts.append(_news_filter_line(market_context))
+    lines.append(" | ".join(macro_parts))
+
+    if flow_text := _simple_total_flow_line(flow_stats):
+        lines.append(flow_text)
+    if flow_summary := _flow_summary(analyses, sectors, flow_stats, confirm_stats, market_stats):
+        lines.append(flow_summary)
+    if rotation := _correction_rotation(analyses, sectors, flow_stats, confirm_stats):
+        lines.append(rotation)
+    if crash_text:
+        lines.append(f"Risk: {crash_text}")
+
+    for item in prepared:
+        symbol_analysis = item["symbol_analysis"]
+        if not isinstance(symbol_analysis, SymbolAnalysis):
+            continue
+        display_close = float(item["display_close"])
+        entry_line = str(item["entry_line"])
+        entry_allowed = bool(item["entry_allowed"])
+        altcoin_blocked = bool(item["altcoin_blocked"])
+        order_book = item["order_book"]
+        onchain_flow = item["onchain_flow"]
+        alarm_lines = item["alarm_lines"]
+        confidence = int(item["confidence"])
+        rr = item["rr"] if isinstance(item["rr"], float) or item["rr"] is None else None
+        setup = item["setup"]
 
         lines.extend([
             "",
             symbol_analysis.symbol,
             f"Fiyat: {_fmt_price(display_close)}",
             _simple_decision_line(entry_line),
+            _confidence_line(confidence, rr),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
+            *([big_order] if (big_order := _big_order_line(order_book if isinstance(order_book, OrderBookPressure) else None)) else []),
+            *(
+                [fake_line]
+                if (
+                    fake_line := _fake_pump_line(
+                        symbol_analysis,
+                        order_book if isinstance(order_book, OrderBookPressure) else None,
+                        onchain_flow if isinstance(onchain_flow, OnChainFlow) else None,
+                    )
+                )
+                else []
+            ),
             *(
                 [rocket]
                 if (
@@ -1618,7 +1960,7 @@ def build_report(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
-                        order_book,
+                        order_book if isinstance(order_book, OrderBookPressure) else None,
                         entry_allowed,
                         altcoin_blocked,
                     )
@@ -1631,6 +1973,18 @@ def build_report(
                 if (real_check := _real_trade_check_line(symbol_analysis, entry_allowed))
                 else []
             ),
-            _simple_alarm_line(alarm_lines),
+            *([test_line] if (test_line := signal_result.symbol_lines.get(symbol_analysis.symbol)) else []),
+            *(
+                [protection]
+                if (
+                    protection := _protection_line(
+                        setup if isinstance(setup, tuple) else None,
+                        display_close,
+                        entry_allowed,
+                    )
+                )
+                else []
+            ),
+            _simple_alarm_line(alarm_lines if isinstance(alarm_lines, list) else []),
         ])
     return "\n".join(lines)

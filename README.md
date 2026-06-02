@@ -11,12 +11,15 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
-- Gunluk trade icin yakin seviyelerden `Giriş Fiyatı`, `Tetik`, `Çıkış Fiyatı` ve `Stop` hesaplar.
+- Gunluk trade icin yakin seviyelerden `Giriş`, `Tetik`, `Hedef`, `Stop` ve `R/R` hesaplar.
+- Piyasa modu, guven puani, BTC dominance, haber filtresi, fake pump, balina akisi ve sinyal basari testini kisa yazar.
 - Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
 - WebSocket worker modunda bot surekli acik kalir, Binance `aggTrade` ve `depth20` streamlerinden akisi toplar, Telegram'a 5 dakikada bir rapor yollar.
 - `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
+- Ucretsiz haber filtresi ETF, FED, hack ve dava basliklarini tarar; ciddi haber riski varsa AL sinyalini dusurur.
+- `signal_history.json` icinde AL sinyallerini saklar; 1 saat / 4 saat performansi ve son 100 sinyal basari oranini takip eder.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
 - BTC ana trendi zayifsa altcoinlerde giris otomatik kapatilir.
 - BTC zayiflama, anlik para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
@@ -54,7 +57,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 
 ## Kurulum
 
-Bu bot ek Python paketi istemez; standart kutuphanelerle calisir.
+Botun ana kismi standart kutuphanelerle calisir; WebSocket worker icin `requirements.txt` icindeki paket kurulur.
 
 1. `.env.example` dosyasini `.env` olarak kopyala.
 
@@ -212,30 +215,41 @@ Worker canli dogrulandiktan sonra eski cron servis durdurulabilir; boylece cift 
 ```text
 KRIPTO RAPORU
 2026-05-31 00:15:00 CEST
-Piyasa: riskli, bekle 🟡
+PİYASA MODU: 🟡 DİKKAT | Güven 58/100 🟡
+Son 100 sinyal: %62 🟢 (31/50)
+BTC.D: 61.4% | Haber: ETF giriş var 🟢 | FED sakin 🟢 | Haber büyük risk yok 🟢
 Para: çıkış 🔴 -420K$ | Alış 3.8M$ / Satış 4.2M$
 
 BTCUSDT
 Fiyat: 73896
 Karar: GİRİŞ VAR 🟢 | zincir destekli
+Güven: 74/100 🟢 | R/R 1:3.1 🟢
 Para: +82K$ alış 🟢
+Büyük emir: Alış 1.4M$ / Satış 860K$ 🟢
+Fake pump: Düşük 🟢
 🚀 Ekstra yükseliş yakın
 Giriş: 72512-73238 🟢
-Çıkış: 78080
+Hedef: 78080
 Stop: 71425
-Gerçek: kârda ilerliyor 🟢 | çıkış 78080
+Gerçek: kârda ilerliyor 🟢 | hedef 78080
+Test: 1s +0.8% | 4s ? | Açık 🟡
+Koruma: risk -1.2% | ödül +3.5%
 Uyarı: Mum: Hammer ⚠️
 
 ETHUSDT
 Fiyat: 2024
 Karar: GİRİŞ YOK 🔴 | fake/dağıtım riski
+Güven: 38/100 🔴 | R/R 1:0.8 🔴
 Para: -36K$ satış 🔴
+Büyük emir: Alış 220K$ / Satış 610K$ 🔴
+Fake pump: Yüksek 🔴
 Giriş: Bekle 🟡
 Tetik: 2140 üstü 🟡
 Geri çekilme: 1967-1983
-Çıkış: 2180
+Hedef: 2180
 Stop: 1938 (tetikten sonra)
-Gerçek: tetik gelmedi | çıkış 2180
+Gerçek: tetik gelmedi | hedef 2180
+Koruma: işlem yok, zarar korunur 🟢
 Uyarı: Yok 🟢
 ```
 ## Notlar
@@ -247,4 +261,6 @@ Uyarı: Yok 🟢
 - Telegram icin BotFather'dan bot token alman gerekir.
 - Chat ID icin kendi Telegram hesabina veya gruba botu ekleyip chat id kullanmalisin.
 - Akış satiri `Anlık Net Akış`, `Teyit Akışı` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.
+- Haber filtresi ucretsiz RSS basliklarindan risk etiketi uretir; kesin ETF dolar akisi icin ayrica profesyonel veri API'si gerekir.
+- Render dosya sistemi servis yeniden deploy olunca sifirlanabilir; uzun vadeli sinyal istatistigi icin sonraki adim kalici veritabani eklemektir.
 - `market_bot.py` onceki kisa piyasa yonu ve piyasa akisi yardimci aracidir; yeni moduler botun ana girisi `main.py` dosyasidir.
