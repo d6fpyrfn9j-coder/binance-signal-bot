@@ -13,6 +13,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
 - Gunluk trade icin yakin seviyelerden `Giriş`, `Tetik`, `Hedef`, `Stop` ve `R/R` hesaplar.
 - Piyasa modu, guven puani, BTC dominance, haber filtresi, fake pump, balina akisi ve sinyal basari testini kisa yazar.
+- `R/R` rengi guven puanina baglidir; guven kirmiziyken R/R yesil yanmaz.
 - Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.

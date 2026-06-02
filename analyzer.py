@@ -1189,9 +1189,13 @@ def _score_emoji(score: int) -> str:
     return "🔴"
 
 
-def _rr_emoji(rr: float | None) -> str:
+def _rr_emoji(rr: float | None, confidence: int) -> str:
     if rr is None or rr < 1:
         return "🔴"
+    if confidence < 45:
+        return "🔴"
+    if confidence < 70:
+        return "🟡"
     if rr >= 2:
         return "🟢"
     return "🟡"
@@ -1341,7 +1345,7 @@ def _confidence_score(
 
 def _confidence_line(confidence: int, rr: float | None) -> str:
     rr_text = "?" if rr is None else f"1:{rr:.1f}"
-    return f"Güven: {confidence}/100 {_score_emoji(confidence)} | R/R {rr_text} {_rr_emoji(rr)}"
+    return f"Güven: {confidence}/100 {_score_emoji(confidence)} | R/R {rr_text} {_rr_emoji(rr, confidence)}"
 
 
 def _fake_pump_line(
