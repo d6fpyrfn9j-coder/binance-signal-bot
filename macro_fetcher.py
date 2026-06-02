@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 
 COINGECKO_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
+COINPAPRIKA_GLOBAL_URL = "https://api.coinpaprika.com/v1/global"
 GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 NEWS_CACHE_SECONDS = int(os.getenv("NEWS_CACHE_SECONDS", "900"))
 
@@ -47,14 +48,34 @@ def _read_url(url: str, timeout: int = 10) -> bytes:
         raise RuntimeError(f"Network error: {exc.reason}") from exc
 
 
+def _coingecko_btc_dominance() -> float | None:
+    payload = json.loads(_read_url(COINGECKO_GLOBAL_URL, timeout=10).decode("utf-8"))
+    btc_value = payload.get("data", {}).get("market_cap_percentage", {}).get("btc")
+    return float(btc_value) if btc_value is not None else None
+
+
+def _coinpaprika_btc_dominance() -> float | None:
+    payload = json.loads(_read_url(COINPAPRIKA_GLOBAL_URL, timeout=10).decode("utf-8"))
+    btc_value = payload.get("bitcoin_dominance_percentage")
+    return float(btc_value) if btc_value is not None else None
+
+
 def fetch_btc_dominance() -> float | None:
-    try:
-        payload = json.loads(_read_url(COINGECKO_GLOBAL_URL, timeout=10).decode("utf-8"))
-        btc_value = payload.get("data", {}).get("market_cap_percentage", {}).get("btc")
-        return float(btc_value) if btc_value is not None else None
-    except Exception:
-        logging.exception("Could not fetch BTC dominance")
-        return None
+    errors: list[str] = []
+    for name, fetcher in (
+        ("coingecko", _coingecko_btc_dominance),
+        ("coinpaprika", _coinpaprika_btc_dominance),
+    ):
+        try:
+            value = fetcher()
+            if value is not None:
+                return value
+            errors.append(f"{name}: empty")
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+
+    logging.warning("Could not fetch BTC dominance: %s", " | ".join(errors))
+    return None
 
 
 def _rss_titles(query: str, limit: int = 5) -> list[str]:
