@@ -1872,7 +1872,7 @@ def build_report(
         frames = _timeframe_map(symbol_analysis)
         item_15m = frames.get("15m")
         if setup and item_15m:
-            entry, target, stop, _, _ = setup
+            entry, target, stop, _, needs_trigger = setup
             candidates.append(
                 SignalCandidate(
                     symbol=symbol_analysis.symbol,
@@ -1885,6 +1885,8 @@ def build_report(
                     confidence=confidence,
                     rr=rr or 0.0,
                     active=entry_allowed and confidence >= 45,
+                    decision=entry_line,
+                    needs_trigger=needs_trigger,
                 )
             )
 
@@ -1910,6 +1912,7 @@ def build_report(
         report_time,
         _market_mode_line(crash_text, btc_4h_bearish, btc_unavailable, confidence_scores, market_context),
         signal_result.summary_line,
+        signal_result.audit_line,
     ]
 
     macro_parts = []

@@ -101,6 +101,31 @@ def fetch_binance_klines(symbol: str, interval: str, limit: int = 250) -> list[C
     logging.debug("Fetching candle data for %s", symbol)
     rows = _http_json(path)
 
+    return _parse_klines(rows)
+
+
+def fetch_binance_klines_range(
+    symbol: str,
+    interval: str,
+    start_time_ms: int,
+    end_time_ms: int | None = None,
+    limit: int = 1000,
+) -> list[Candle]:
+    params = {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "startTime": start_time_ms,
+        "limit": limit,
+    }
+    if end_time_ms is not None:
+        params["endTime"] = end_time_ms
+    path = f"/api/v3/klines?{urllib.parse.urlencode(params)}"
+    logging.debug("Fetching candle range for %s", symbol)
+    rows = _http_json(path)
+    return _parse_klines(rows)
+
+
+def _parse_klines(rows) -> list[Candle]:
     candles: list[Candle] = []
     for row in rows:
         candles.append(

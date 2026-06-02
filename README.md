@@ -15,6 +15,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Piyasa modu, guven puani, BTC dominance, haber filtresi, fake pump, balina akisi ve sinyal basari testini kisa yazar.
 - `R/R` rengi guven puanina baglidir; guven kirmiziyken R/R yesil yanmaz.
 - Tetik seviyesi sadece fitil/dokunma degildir; bot 15m kapanis teyidi arar.
+- Bot kendi Telegram sinyallerini Binance 15m mumlariyla karsilastirir; fake tetik, korunan zarar, stop ve kacan firsat sayar.
 - Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
