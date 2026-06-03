@@ -16,6 +16,9 @@ from data_fetcher import Candle, fetch_binance_klines_range
 MAX_HISTORY = 250
 DEFAULT_HISTORY_FILE = "signal_history.json"
 MAX_RECORDS_TO_AUDIT = int(os.getenv("MAX_SIGNAL_AUDIT_RECORDS", "30"))
+MIN_TRACK_TRIGGER_CONFIDENCE = int(os.getenv("MIN_TRACK_TRIGGER_CONFIDENCE", "55"))
+MIN_TRACK_TRIGGER_RR = float(os.getenv("MIN_TRACK_TRIGGER_RR", "2.0"))
+MIN_TRACK_OBSERVE_CONFIDENCE = int(os.getenv("MIN_TRACK_OBSERVE_CONFIDENCE", "40"))
 
 
 @dataclass(frozen=True)
@@ -99,9 +102,37 @@ def _record_pct(record: dict[str, Any], price: float) -> float | None:
 def _record_side(candidate: SignalCandidate) -> str:
     if candidate.active:
         return "AL"
-    if candidate.needs_trigger:
+    if _is_actionable_trigger(candidate):
         return "TETIK"
     return "IZLE"
+
+
+def _is_hard_no(candidate: SignalCandidate) -> bool:
+    decision = candidate.decision.upper()
+    hard_markers = (
+        "HAYIR",
+        "GİRİŞ YOK",
+        "BTC ZAYIF",
+        "TREND DÜŞÜŞTE",
+        "SATIŞ BASKISI",
+        "PARA ÇIKIŞI",
+        "DESTEK KIRILDI",
+        "HABER RİSKİ",
+        "FAKE",
+        "DAĞITIM",
+        "R/R DÜŞÜK",
+        "GÜVEN DÜŞÜK",
+    )
+    return any(marker in decision for marker in hard_markers)
+
+
+def _is_actionable_trigger(candidate: SignalCandidate) -> bool:
+    return (
+        candidate.needs_trigger
+        and not _is_hard_no(candidate)
+        and candidate.confidence >= MIN_TRACK_TRIGGER_CONFIDENCE
+        and candidate.rr >= MIN_TRACK_TRIGGER_RR
+    )
 
 
 def _price_path(symbol: str, created_at: dt.datetime, now: dt.datetime) -> list[Candle]:
@@ -168,6 +199,7 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
                     record["triggered"] = True
                     record["trigger_time_ms"] = trigger_time_ms
                     record["result"] = "Tetik 15m kapanış"
+                    continue
                 elif candle.high >= entry:
                     fake_touches += 1
                     record["fake_touches"] = fake_touches
@@ -176,6 +208,8 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
                         break
 
             if triggered:
+                if trigger_time_ms and candle.close_time <= trigger_time_ms:
+                    continue
                 # Conservative order: if stop and target happen in the same 15m candle, count risk first.
                 if candle.low <= stop:
                     _close_record(record, "failed", "Tetik sonrası stop", candle.close_time)
@@ -386,9 +420,10 @@ def track_signals(candidates: list[SignalCandidate]) -> SignalTrackerResult:
     _audit_records_with_binance(records, now)
 
     for candidate in candidates:
-        if candidate.rr < 1:
+        side = _record_side(candidate)
+        if side in {"AL", "TETIK"} and candidate.rr < MIN_TRACK_TRIGGER_RR:
             continue
-        if not candidate.active and candidate.confidence < 35 and not candidate.needs_trigger:
+        if side == "IZLE" and candidate.confidence < MIN_TRACK_OBSERVE_CONFIDENCE:
             continue
         if any(_is_duplicate(record, candidate, now) for record in records):
             continue

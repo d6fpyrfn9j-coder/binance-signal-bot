@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 from dataclasses import dataclass
 
 from data_fetcher import Candle
@@ -11,6 +12,10 @@ from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pa
 from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
 from signal_tracker import SignalCandidate, track_signals
+
+
+MIN_ENTRY_CONFIDENCE = int(os.getenv("MIN_ENTRY_CONFIDENCE", "65"))
+MIN_ENTRY_RR = float(os.getenv("MIN_ENTRY_RR", "2.0"))
 
 
 @dataclass(frozen=True)
@@ -908,7 +913,7 @@ def _entry_decision(
         _fake_risk_score(item_15m, order_book, onchain_flow),
         _fake_risk_score(item_1h, order_book, onchain_flow),
     )
-    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -10)
     onchain_weak = _onchain_sell_pressure(onchain_flow)
     onchain_strong = _onchain_accumulation(onchain_flow)
     stablecoin_strong = _stablecoin_buy_power(stablecoin_reserve)
@@ -927,20 +932,23 @@ def _entry_decision(
         return "Giriş: HAYIR 🔴 | zincir satış baskısı", False
     if item_1h.trend_score <= -5 or (item_15m.trend_score <= -5 and item_1h.trend_score <= -3):
         return "Giriş: HAYIR 🔴 | trend düşüşte", False
+    if item_15m.rsi >= 72 or item_1h.rsi >= 72:
+        return "Giriş: HAYIR 🔴 | RSI yüksek", False
     if item_15m.taker_delta_pct <= -15 and item_1h.trend_score <= 0:
         return "Giriş: HAYIR 🔴 | satıcı baskısı", False
-    if flow_amount is not None and flow_amount <= -100_000:
+    if flow_amount is not None and flow_amount <= -50_000:
         return f"Giriş: HAYIR 🔴 | para çıkışı {_fmt_amount(flow_amount, '$')}", False
     if item_4h.close <= item_4h.support:
         return "Giriş: HAYIR 🔴 | destek kırıldı", False
 
     if (
-        item_1h.trend_score >= 6
-        and item_15m.trend_score >= 3
-        and item_15m.taker_delta_pct >= 0
+        item_4h.trend_score >= 0
+        and item_1h.trend_score >= 7
+        and item_15m.trend_score >= 4
+        and item_15m.taker_delta_pct >= 5
         and not orderbook_weak
         and not onchain_weak
-        and (flow_amount is None or flow_amount >= 25_000)
+        and (flow_amount is None or flow_amount >= 50_000)
     ):
         reason = "trend güçlü"
         if onchain_strong or stablecoin_strong:
@@ -949,14 +957,16 @@ def _entry_decision(
 
     if (
         near_support_pct <= 1.5
-        and item_1h.trend_score > -3
-        and item_15m.rsi <= 50
+        and item_4h.trend_score >= -2
+        and item_1h.trend_score >= 0
+        and 32 <= item_15m.rsi <= 52
         and reversal
         and not orderbook_weak
+        and (flow_amount is None or flow_amount >= -25_000)
     ):
         return "Giriş: KADEMELİ 🟢 | destekte dönüş var", True
 
-    if item_1h.trend_score >= 3 and item_15m.trend_score >= 0 and item_15m.taker_delta_pct >= -5:
+    if item_1h.trend_score >= 4 and item_15m.trend_score >= 1 and item_15m.taker_delta_pct >= 0:
         if flow_amount is not None and flow_amount < 25_000:
             return "Giriş: BEKLE 🟡 | akış zayıf", False
         return "Giriş: BEKLE 🟡 | teyit bekle", False
@@ -1430,6 +1440,17 @@ def _simple_decision_line(entry_line: str) -> str:
     return f"Karar: {decision}" + (f" | {reason}" if reason else "")
 
 
+def _is_no_trade_entry(entry_line: str) -> bool:
+    text = entry_line.upper()
+    blockers = (
+        "HAYIR",
+        "HABER RİSKİ",
+        "GÜVEN DÜŞÜK",
+        "R/R DÜŞÜK",
+    )
+    return any(blocker in text for blocker in blockers)
+
+
 def _simple_symbol_flow(symbol: str, flow_stats: dict[str, MarketStat] | None) -> str | None:
     flow = flow_stats.get(symbol) if flow_stats else None
     amount = _flow_pressure_usd(flow)
@@ -1530,11 +1551,7 @@ def _real_trade_check_line(
             return f"Gerçek: tetik gelmedi | hedef {_fmt_price(target)}"
         if not trigger_closed:
             return f"Gerçek: tetik dokundu, 15m kapanış yok 🟡"
-        if recent_high >= target:
-            return f"Gerçek: tetik + hedef görüldü 🟢"
-        if recent_low <= stop:
-            return f"Gerçek: tetik görüldü, stop riski 🔴"
-        return f"Gerçek: 15m kapanışla tetik görüldü | hedef {_fmt_price(target)}"
+        return f"Gerçek: 15m kapanışla tetik görüldü | sonrası izleniyor"
 
     if recent_high >= target:
         return f"Gerçek: hedef görüldü 🟢"
@@ -1554,7 +1571,11 @@ def _real_trade_check_line(
 def _simple_trade_lines(
     symbol_analysis: SymbolAnalysis,
     entry_allowed: bool,
+    entry_line: str | None = None,
 ) -> list[str]:
+    if entry_line and _is_no_trade_entry(entry_line):
+        return ["Giriş: Yok 🔴", "Plan: Bekle"]
+
     day_levels = _day_trade_levels(symbol_analysis)
     if not day_levels:
         return ["Giriş: veri eksik"]
@@ -1867,6 +1888,29 @@ def build_report(
             market_context,
             rr,
         )
+        if entry_allowed:
+            quality_reasons: list[str] = []
+            if confidence < MIN_ENTRY_CONFIDENCE:
+                quality_reasons.append("güven düşük")
+            if rr is None or rr < MIN_ENTRY_RR:
+                quality_reasons.append("R/R düşük")
+            if quality_reasons:
+                entry_line = f"Giriş: BEKLE 🟡 | {', '.join(quality_reasons)}"
+                entry_allowed = False
+                setup = _trade_setup_values(symbol_analysis, entry_allowed)
+                rr = _risk_reward_ratio(setup)
+                confidence = _confidence_score(
+                    symbol_analysis,
+                    entry_allowed,
+                    altcoin_blocked,
+                    order_book,
+                    flow_stats,
+                    confirm_stats,
+                    onchain_flow,
+                    stablecoin_reserve,
+                    market_context,
+                    rr,
+                )
         confidence_scores.append(confidence)
 
         frames = _timeframe_map(symbol_analysis)
@@ -1884,7 +1928,7 @@ def build_report(
                     recent_low=item_15m.recent_low,
                     confidence=confidence,
                     rr=rr or 0.0,
-                    active=entry_allowed and confidence >= 45,
+                    active=entry_allowed and confidence >= MIN_ENTRY_CONFIDENCE and (rr or 0.0) >= MIN_ENTRY_RR,
                     decision=entry_line,
                     needs_trigger=needs_trigger,
                 )
@@ -1978,10 +2022,13 @@ def build_report(
                 )
                 else []
             ),
-            *_simple_trade_lines(symbol_analysis, entry_allowed),
+            *_simple_trade_lines(symbol_analysis, entry_allowed, entry_line),
             *(
                 [real_check]
-                if (real_check := _real_trade_check_line(symbol_analysis, entry_allowed))
+                if (
+                    not _is_no_trade_entry(entry_line)
+                    and (real_check := _real_trade_check_line(symbol_analysis, entry_allowed))
+                )
                 else []
             ),
             *([test_line] if (test_line := signal_result.symbol_lines.get(symbol_analysis.symbol)) else []),
