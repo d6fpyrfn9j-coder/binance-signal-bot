@@ -32,28 +32,56 @@ CORE_SYMBOLS = (
     "SOLUSDT",
 )
 ALT_CANDIDATES = (
+    "BNBUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "SUIUSDT",
+    "APTUSDT",
+    "NEARUSDT",
+    "DOTUSDT",
     "FETUSDT",
     "RENDERUSDT",
+    "GRTUSDT",
     "ONDOUSDT",
+    "PENDLEUSDT",
     "FILUSDT",
     "ARBUSDT",
     "OPUSDT",
+    "STRKUSDT",
+    "MANTAUSDT",
 )
 ALL_SYMBOLS = CORE_SYMBOLS + ALT_CANDIDATES
 TIMEFRAMES = ("15m", "1h", "4h")
-MAX_ALT_SYMBOLS = 3
-MIN_ALT_QUOTE_VOLUME = 5_000_000
-MIN_ALT_5M_QUOTE_VOLUME = 30_000
+MAX_REPORT_SYMBOLS = int(os.getenv("MAX_REPORT_SYMBOLS", "10"))
+MAX_ALT_SYMBOLS = max(1, MAX_REPORT_SYMBOLS - len(CORE_SYMBOLS))
+MIN_ALT_QUOTE_VOLUME = float(os.getenv("MIN_ALT_QUOTE_VOLUME", "20000000"))
+MIN_ALT_5M_QUOTE_VOLUME = float(os.getenv("MIN_ALT_5M_QUOTE_VOLUME", "50000"))
+MIN_ALT_1H_QUOTE_VOLUME = float(os.getenv("MIN_ALT_1H_QUOTE_VOLUME", "250000"))
 SECTORS = {
     "BTCUSDT": "BTC",
     "ETHUSDT": "Layer 1",
     "SOLUSDT": "Layer 1",
+    "BNBUSDT": "Layer 1",
+    "XRPUSDT": "Layer 1",
+    "ADAUSDT": "Layer 1",
+    "AVAXUSDT": "Layer 1",
+    "SUIUSDT": "Layer 1",
+    "APTUSDT": "Layer 1",
+    "NEARUSDT": "Layer 1",
+    "DOTUSDT": "Layer 1",
+    "LINKUSDT": "Oracle",
     "FETUSDT": "AI",
     "RENDERUSDT": "AI / DePIN",
+    "GRTUSDT": "AI / Data",
     "ONDOUSDT": "RWA",
+    "PENDLEUSDT": "RWA",
     "FILUSDT": "DePIN",
     "ARBUSDT": "Layer 2",
     "OPUSDT": "Layer 2",
+    "STRKUSDT": "Layer 2",
+    "MANTAUSDT": "Layer 2",
 }
 
 
@@ -170,7 +198,7 @@ def create_report(scan: MarketScan | None = None) -> str:
     if scan and scan.flow_stats:
         flow_stats.update(scan.flow_stats)
     confirm_stats = load_confirm_stats()
-    symbols = select_symbols(flow_stats)
+    symbols = select_symbols(flow_stats, market_stats, confirm_stats)
     order_books = {
         symbol: pressure
         for symbol, pressure in (scan.order_books.items() if scan else [])
@@ -184,18 +212,15 @@ def create_report(scan: MarketScan | None = None) -> str:
     market_context = load_market_context()
     logging.info("Selected symbols: %s", ", ".join(symbols))
 
-    for symbol in symbols:
-        try:
-            candles_by_timeframe = {
-                timeframe: fetch_binance_klines(symbol, timeframe, limit=250)
-                for timeframe in TIMEFRAMES
-            }
-            analyses.append(analyze_symbol(symbol, candles_by_timeframe))
-        except Exception:
-            logging.exception("Skipping %s because data fetch or analysis failed", symbol)
-            if symbol == "BTCUSDT":
-                btc_unavailable = True
-            continue
+    with ThreadPoolExecutor(max_workers=min(max(len(symbols), 1), 8)) as executor:
+        futures = {executor.submit(load_symbol_analysis, symbol): symbol for symbol in symbols}
+        for future, symbol in futures.items():
+            try:
+                analyses.append(future.result())
+            except Exception:
+                logging.exception("Skipping %s because data fetch or analysis failed", symbol)
+                if symbol == "BTCUSDT":
+                    btc_unavailable = True
     if not analyses:
         raise RuntimeError("Hicbir sembol icin rapor olusturulamadi")
     return build_report(
@@ -219,6 +244,14 @@ def load_market_stats() -> dict[str, MarketStat]:
     except Exception:
         logging.exception("Could not fetch 24hr market stats")
         return {}
+
+
+def load_symbol_analysis(symbol: str):
+    candles_by_timeframe = {
+        timeframe: fetch_binance_klines(symbol, timeframe, limit=250)
+        for timeframe in TIMEFRAMES
+    }
+    return analyze_symbol(symbol, candles_by_timeframe)
 
 
 def load_flow_stats() -> dict[str, MarketStat]:
@@ -321,19 +354,77 @@ def load_market_context() -> MarketContext | None:
         return None
 
 
-def select_symbols(stats: dict[str, MarketStat]) -> tuple[str, ...]:
+def _positive(value: float | None) -> float:
+    return max(value or 0.0, 0.0)
+
+
+def _negative(value: float | None) -> float:
+    return min(value or 0.0, 0.0)
+
+
+def _alt_rank(
+    symbol: str,
+    flow: MarketStat | None,
+    market: MarketStat | None,
+    confirm: MarketStat | None,
+) -> float | None:
+    if not market or market.quote_volume < MIN_ALT_QUOTE_VOLUME:
+        return None
+    if not flow or flow.quote_volume < MIN_ALT_5M_QUOTE_VOLUME:
+        return None
+    if confirm and confirm.quote_volume < MIN_ALT_1H_QUOTE_VOLUME:
+        return None
+
+    score = 0.0
+    score += min(market.quote_volume / 1_000_000, 300.0)
+    score += _positive(market.price_change_pct) * 12.0
+    score += _positive(flow.price_change_pct) * 120.0
+    score += _positive(confirm.price_change_pct if confirm else 0.0) * 80.0
+    score += max(flow.net_taker_quote_volume, 0.0) / 10_000
+    if confirm:
+        score += max(confirm.net_taker_quote_volume, 0.0) / 50_000
+
+    score += _negative(flow.price_change_pct) * 160.0
+    score += _negative(confirm.price_change_pct if confirm else 0.0) * 90.0
+    score += min(flow.net_taker_quote_volume, 0.0) / 15_000
+
+    return score
+
+
+def select_symbols(
+    flow_stats: dict[str, MarketStat],
+    market_stats: dict[str, MarketStat] | None = None,
+    confirm_stats: dict[str, MarketStat] | None = None,
+) -> tuple[str, ...]:
     ranked: list[tuple[float, str]] = []
     for symbol in ALT_CANDIDATES:
-        stat = stats.get(symbol)
-        if not stat or stat.quote_volume < MIN_ALT_5M_QUOTE_VOLUME:
+        score = _alt_rank(
+            symbol,
+            flow_stats.get(symbol),
+            market_stats.get(symbol) if market_stats else None,
+            confirm_stats.get(symbol) if confirm_stats else None,
+        )
+        if score is None:
             continue
-        # 5M positive change with USDT volume is the near-real-time money-flow proxy.
-        flow_score = stat.quote_volume * max(stat.price_change_pct, 0.05)
-        ranked.append((flow_score, symbol))
+        ranked.append((score, symbol))
 
     top_alts = [symbol for _, symbol in sorted(ranked, reverse=True)[:MAX_ALT_SYMBOLS]]
-    if not top_alts:
-        top_alts = list(ALT_CANDIDATES[:MAX_ALT_SYMBOLS])
+    if len(top_alts) < MAX_ALT_SYMBOLS:
+        fallback = [
+            symbol
+            for symbol in ALT_CANDIDATES
+            if symbol not in top_alts
+            and (stat := (market_stats or {}).get(symbol))
+            and stat.quote_volume >= MIN_ALT_QUOTE_VOLUME
+        ]
+        fallback.sort(
+            key=lambda symbol: (
+                (market_stats or {})[symbol].quote_volume,
+                (market_stats or {})[symbol].price_change_pct,
+            ),
+            reverse=True,
+        )
+        top_alts.extend(fallback[: MAX_ALT_SYMBOLS - len(top_alts)])
     return CORE_SYMBOLS + tuple(top_alts)
 
 

@@ -6,7 +6,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 
 ## Ozellikler
 
-- Binance public API ile BTC, Layer 1, Layer 2, AI, RWA ve DePIN sembollerini izler.
+- Binance public API ile BTC, ETH, SOL ve likit Layer 1, Layer 2, AI, RWA, DePIN adaylarini izler.
 - Kisa, orta ve ana trend verilerini icerde analiz eder.
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
@@ -28,7 +28,8 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - BTC zayiflama, anlik para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
 - Duzeltme geldiginde para USDT'de mi bekliyor, sektor icinde mi donuyor, baska projeye mi kayiyor ayirmaya calisir.
 - Anlik para akisini Binance taker alis/satis hacmi ve net fark olarak yazar; kucuk miktarlari `zayif/cok zayif` diye etiketler.
-- Altcoin secimi anlik Binance USDT hacmi + fiyat degisimine gore yapilir; teyit verisi icerde kullanilir.
+- Altcoin havuzu genistir; raporda en fazla 10 coin kalir. Bot 5dk para akisi, 1s teyit, 24s likidite ve momentumla en guclu 7 altcoini secer.
+- Bos/dusuk likiditeli coinleri elemek icin varsayilan altcoin filtresi 24s hacim `20M$`, 5dk hacim `50K$`, 1s hacim `250K$` altini rapora almaz.
 - Destek/direnc seviyelerini onceki swing high/low uzerinden belirler; son mum kirilim yaptiysa bunu daha net yakalar.
 - Riskli durumlarda uyari verir:
   - Asiri RSI
@@ -77,12 +78,29 @@ CRYPTOQUANT_API_KEY=
 BTCUSDT_COST=
 ETHUSDT_COST=2049
 SOLUSDT_COST=
+BNBUSDT_COST=
+XRPUSDT_COST=
+ADAUSDT_COST=
+AVAXUSDT_COST=
+LINKUSDT_COST=
+SUIUSDT_COST=
+APTUSDT_COST=
+NEARUSDT_COST=
+DOTUSDT_COST=
 FETUSDT_COST=
 RENDERUSDT_COST=
+GRTUSDT_COST=
 ONDOUSDT_COST=
+PENDLEUSDT_COST=
 FILUSDT_COST=
 ARBUSDT_COST=
 OPUSDT_COST=
+STRKUSDT_COST=
+MANTAUSDT_COST=
+MAX_REPORT_SYMBOLS=10
+MIN_ALT_QUOTE_VOLUME=20000000
+MIN_ALT_5M_QUOTE_VOLUME=50000
+MIN_ALT_1H_QUOTE_VOLUME=250000
 ```
 
 Chat ID bilmiyorsan:

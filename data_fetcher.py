@@ -163,27 +163,44 @@ def fetch_24hr_stats(symbols: tuple[str, ...]) -> dict[str, MarketStat]:
     return stats
 
 
+def _fetch_recent_flow_stat_one(symbol: str, interval: str) -> MarketStat | None:
+    candles = fetch_binance_klines(symbol, interval, limit=2)
+    if len(candles) < 2:
+        return None
+    previous = candles[-2]
+    current = candles[-1]
+    change_pct = ((current.close - previous.close) / previous.close) * 100 if previous.close else 0.0
+    quote_volume = current.quote_volume or current.close * current.volume
+    taker_buy_quote = current.taker_buy_quote_volume
+    taker_sell_quote = max(quote_volume - taker_buy_quote, 0.0)
+    return MarketStat(
+        symbol=symbol,
+        price_change_pct=change_pct,
+        quote_volume=quote_volume,
+        last_price=current.close,
+        taker_buy_quote_volume=taker_buy_quote,
+        taker_sell_quote_volume=taker_sell_quote,
+        net_taker_quote_volume=taker_buy_quote - taker_sell_quote,
+    )
+
+
 def fetch_recent_flow_stats(symbols: tuple[str, ...], interval: str = "1h") -> dict[str, MarketStat]:
     stats: dict[str, MarketStat] = {}
-    for symbol in symbols:
-        candles = fetch_binance_klines(symbol, interval, limit=2)
-        if len(candles) < 2:
-            continue
-        previous = candles[-2]
-        current = candles[-1]
-        change_pct = ((current.close - previous.close) / previous.close) * 100 if previous.close else 0.0
-        quote_volume = current.quote_volume or current.close * current.volume
-        taker_buy_quote = current.taker_buy_quote_volume
-        taker_sell_quote = max(quote_volume - taker_buy_quote, 0.0)
-        stats[symbol] = MarketStat(
-            symbol=symbol,
-            price_change_pct=change_pct,
-            quote_volume=quote_volume,
-            last_price=current.close,
-            taker_buy_quote_volume=taker_buy_quote,
-            taker_sell_quote_volume=taker_sell_quote,
-            net_taker_quote_volume=taker_buy_quote - taker_sell_quote,
-        )
+    workers = min(max(len(symbols), 1), 8)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_fetch_recent_flow_stat_one, symbol, interval): symbol
+            for symbol in symbols
+        }
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                stat = future.result()
+            except Exception:
+                logging.exception("Could not fetch %s %s flow stats", symbol, interval)
+                continue
+            if stat:
+                stats[symbol] = stat
     return stats
 
 
