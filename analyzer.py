@@ -984,9 +984,6 @@ def _rise_signal(
     confirm_stats: dict[str, MarketStat] | None,
     altcoin_blocked: bool,
 ) -> str | None:
-    if altcoin_blocked:
-        return None
-
     symbol = symbol_analysis.symbol
     frames = _timeframe_map(symbol_analysis)
     item_15m = frames.get("15m")
@@ -1003,6 +1000,13 @@ def _rise_signal(
     trend_ok = item_1h.trend_score >= 3 or item_4h.trend_score >= 3
     near_breakout = item_15m.close >= item_15m.resistance * 0.995
     momentum_ok = item_15m.momentum_pct > 0 or item_1h.momentum_pct > 0
+
+    if altcoin_blocked:
+        if (flow_positive or confirm_positive) and rsi_ok and item_15m.trend_score >= 3 and item_1h.trend_score >= 3:
+            return "Yükseliş var ama BTC zayıf ⚠️"
+        if near_breakout and momentum_ok and rsi_ok:
+            return "Kırılım yaklaşıyor ama BTC zayıf ⚠️"
+        return None
 
     if (item_15m.fake_rise_risk or item_15m.distribution_risk) and flow.price_change_pct > 0:
         return "Yükseliş fake olabilir ⚠️"
@@ -2017,6 +2021,18 @@ def build_report(
                         confirm_stats,
                         order_book if isinstance(order_book, OrderBookPressure) else None,
                         entry_allowed,
+                        altcoin_blocked,
+                    )
+                )
+                else []
+            ),
+            *(
+                [rise]
+                if (
+                    rise := _rise_signal(
+                        symbol_analysis,
+                        flow_stats,
+                        confirm_stats,
                         altcoin_blocked,
                     )
                 )
