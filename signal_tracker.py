@@ -45,6 +45,19 @@ class SignalTrackerResult:
     symbol_lines: dict[str, str]
 
 
+@dataclass(frozen=True)
+class SignalPerformanceProfile:
+    symbol_adjustments: dict[str, int]
+    symbol_notes: dict[str, str]
+    summary_line: str | None = None
+
+    def adjustment_for(self, symbol: str) -> int:
+        return self.symbol_adjustments.get(symbol, 0)
+
+    def note_for(self, symbol: str) -> str | None:
+        return self.symbol_notes.get(symbol)
+
+
 def _now_utc() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
@@ -439,6 +452,92 @@ def _audit_line(records: list[dict[str, Any]]) -> str:
     if not any((missed, fake, protected, failed)):
         return "Hata testi: veri birikiyor 🟡"
     return f"Hata testi: kaçan {missed} | fake {fake} | korunan {protected} | stop {failed}"
+
+
+def load_signal_performance_profile() -> SignalPerformanceProfile:
+    if os.getenv("PERFORMANCE_LEARNING_ENABLED", "true").lower() in {"0", "false", "no"}:
+        return SignalPerformanceProfile(symbol_adjustments={}, symbol_notes={})
+
+    records = _load_records(_history_path())[-100:]
+    _normalize_legacy_records(records)
+    stats: dict[str, dict[str, int]] = {}
+    for record in records:
+        symbol = str(record.get("symbol") or "")
+        status = str(record.get("status") or "")
+        side = str(record.get("side") or "")
+        if not symbol or status in {"", "open", "None"}:
+            continue
+
+        bucket = stats.setdefault(
+            symbol,
+            {
+                "action": 0,
+                "success": 0,
+                "failed": 0,
+                "fake": 0,
+                "missed": 0,
+                "protected": 0,
+            },
+        )
+        if side in {"AL", "TETIK"}:
+            bucket["action"] += 1
+            if status == "success":
+                bucket["success"] += 1
+            elif status == "failed":
+                bucket["failed"] += 1
+            elif status == "fake":
+                bucket["fake"] += 1
+        elif side == "IZLE":
+            if status == "missed":
+                bucket["missed"] += 1
+            elif status in {"protected", "fake"}:
+                bucket["protected"] += 1
+
+    adjustments: dict[str, int] = {}
+    notes: dict[str, str] = {}
+    total_missed = 0
+    total_failed = 0
+    for symbol, bucket in stats.items():
+        adjustment = 0
+        action = bucket["action"]
+        success = bucket["success"]
+        failed = bucket["failed"]
+        missed = bucket["missed"]
+        fake = bucket["fake"]
+        total_missed += missed
+        total_failed += failed
+
+        if action >= 2:
+            win_rate = success / action if action else 0.0
+            if failed >= 2 and win_rate < 0.40:
+                adjustment -= 10
+                notes[symbol] = "Öğrenme: geçmiş stop zayıf 🔴"
+            elif success >= 2 and win_rate >= 0.65:
+                adjustment += 5
+                notes[symbol] = "Öğrenme: geçmiş sinyal iyi 🟢"
+
+        if missed >= 2:
+            adjustment += 6
+            notes[symbol] = "Öğrenme: geçmişte fırsat kaçtı 🟡"
+        elif missed == 1 and action == 0:
+            adjustment += 3
+
+        if fake >= 2:
+            adjustment -= 6
+            notes[symbol] = "Öğrenme: fake riski geçmişte yüksek 🔴"
+
+        if adjustment:
+            adjustments[symbol] = max(-15, min(10, adjustment))
+
+    summary = None
+    if total_missed or total_failed:
+        summary = f"Öğrenme: kaçan {total_missed} | stop {total_failed}"
+
+    return SignalPerformanceProfile(
+        symbol_adjustments=adjustments,
+        symbol_notes=notes,
+        summary_line=summary,
+    )
 
 
 def track_signals(candidates: list[SignalCandidate]) -> SignalTrackerResult:

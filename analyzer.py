@@ -11,11 +11,13 @@ from data_fetcher import MarketStat, OrderBookPressure
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
-from signal_tracker import SignalCandidate, track_signals
+from signal_tracker import SignalCandidate, SignalPerformanceProfile, load_signal_performance_profile, track_signals
 
 
 MIN_ENTRY_CONFIDENCE = int(os.getenv("MIN_ENTRY_CONFIDENCE", "65"))
 MIN_ENTRY_RR = float(os.getenv("MIN_ENTRY_RR", "2.0"))
+QUALITY_LOW_24H_VOLUME = float(os.getenv("QUALITY_LOW_24H_VOLUME", "30000000"))
+QUALITY_LOW_FLOW_VOLUME = float(os.getenv("QUALITY_LOW_FLOW_VOLUME", "75000"))
 
 
 @dataclass(frozen=True)
@@ -1362,6 +1364,40 @@ def _confidence_line(confidence: int, rr: float | None) -> str:
     return f"Güven: {confidence}/100 {_score_emoji(confidence)} | R/R {rr_text} {_rr_emoji(rr, confidence)}"
 
 
+def _quality_adjustment(
+    symbol: str,
+    market_stats: dict[str, MarketStat] | None,
+    flow_stats: dict[str, MarketStat] | None,
+    order_book: OrderBookPressure | None,
+) -> tuple[int, str | None]:
+    adjustment = 0
+    reasons: list[str] = []
+    market = market_stats.get(symbol) if market_stats else None
+    flow = flow_stats.get(symbol) if flow_stats else None
+
+    if symbol not in {"BTCUSDT", "ETHUSDT", "SOLUSDT"}:
+        if market and market.quote_volume < QUALITY_LOW_24H_VOLUME:
+            adjustment -= 6
+            reasons.append("hacim düşük")
+        if flow and flow.quote_volume < QUALITY_LOW_FLOW_VOLUME:
+            adjustment -= 4
+            reasons.append("akış zayıf")
+
+    if order_book:
+        sell_wall_heavy = (
+            order_book.nearest_sell_wall_quote > 0
+            and order_book.nearest_sell_wall_quote > order_book.nearest_buy_wall_quote * 2
+        )
+        if order_book.imbalance_pct <= -25 or sell_wall_heavy:
+            adjustment -= 6
+            reasons.append("satış duvarı")
+
+    if not reasons:
+        return 0, None
+    label = ", ".join(reasons[:2])
+    return max(adjustment, -12), f"Kalite: {label} 🔴"
+
+
 def _fake_pump_line(
     symbol_analysis: SymbolAnalysis,
     order_book: OrderBookPressure | None,
@@ -1958,6 +1994,7 @@ def build_report(
     candidates: list[SignalCandidate] = []
     confidence_scores: list[int] = []
     news_impact = _news_impact(market_context)
+    performance_profile = load_signal_performance_profile()
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
@@ -2004,6 +2041,34 @@ def build_report(
             market_context,
             rr,
         )
+        quality_adjust, quality_line = _quality_adjustment(
+            symbol_analysis.symbol,
+            market_stats,
+            flow_stats,
+            order_book,
+        )
+        performance_adjust = performance_profile.adjustment_for(symbol_analysis.symbol)
+        performance_note = performance_profile.note_for(symbol_analysis.symbol)
+        confidence = _clamp(confidence + quality_adjust + performance_adjust)
+
+        if entry_allowed and quality_adjust <= -8:
+            entry_line = "Giriş: BEKLE 🟡 | kalite filtresi"
+            entry_allowed = False
+            setup = _trade_setup_values(symbol_analysis, entry_allowed)
+            rr = _risk_reward_ratio(setup)
+            confidence = _confidence_score(
+                symbol_analysis,
+                entry_allowed,
+                altcoin_blocked,
+                order_book,
+                flow_stats,
+                confirm_stats,
+                onchain_flow,
+                stablecoin_reserve,
+                market_context,
+                rr,
+            )
+            confidence = _clamp(confidence + quality_adjust + performance_adjust)
         if entry_allowed:
             quality_reasons: list[str] = []
             if confidence < MIN_ENTRY_CONFIDENCE:
@@ -2027,6 +2092,7 @@ def build_report(
                     market_context,
                     rr,
                 )
+                confidence = _clamp(confidence + quality_adjust + performance_adjust)
         confidence_scores.append(confidence)
 
         frames = _timeframe_map(symbol_analysis)
@@ -2063,6 +2129,8 @@ def build_report(
                 "confidence": confidence,
                 "rr": rr,
                 "setup": setup,
+                "quality_line": quality_line,
+                "performance_note": performance_note,
             }
         )
 
@@ -2089,6 +2157,8 @@ def build_report(
         lines.append(rotation)
     if crash_text:
         lines.append(f"Risk: {crash_text}")
+    if performance_profile.summary_line:
+        lines.append(performance_profile.summary_line)
 
     for item in prepared:
         symbol_analysis = item["symbol_analysis"]
@@ -2104,6 +2174,8 @@ def build_report(
         confidence = int(item["confidence"])
         rr = item["rr"] if isinstance(item["rr"], float) or item["rr"] is None else None
         setup = item["setup"]
+        quality_line = item["quality_line"]
+        performance_note = item["performance_note"]
 
         lines.extend([
             "",
@@ -2111,6 +2183,8 @@ def build_report(
             _simple_decision_line(entry_line),
             _confidence_line(confidence, rr),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
+            *([str(quality_line)] if isinstance(quality_line, str) and confidence >= 45 else []),
+            *([str(performance_note)] if isinstance(performance_note, str) and confidence >= 45 else []),
             *([big_order] if (big_order := _big_order_line(order_book if isinstance(order_book, OrderBookPressure) else None)) else []),
             *(
                 [fake_line]
