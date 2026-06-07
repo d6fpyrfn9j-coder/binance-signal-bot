@@ -1505,6 +1505,47 @@ def _rocket_line(
     return None
 
 
+def _strong_rise_alert_line(
+    symbol_analysis: SymbolAnalysis,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    order_book: OrderBookPressure | None,
+    entry_allowed: bool,
+    altcoin_blocked: bool,
+) -> str | None:
+    if altcoin_blocked or not entry_allowed:
+        return None
+
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
+    if not item_15m or not item_1h or not item_4h or not flow:
+        return None
+
+    flow_amount = _flow_pressure_usd(flow)
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book),
+        _fake_risk_score(item_1h, order_book),
+    )
+    trend_strong = item_15m.trend_score >= 5 and item_1h.trend_score >= 5 and item_4h.trend_score >= 0
+    ema_ok = (
+        item_15m.close >= item_15m.ema20
+        and item_15m.close >= item_15m.ema50
+        and item_1h.close >= item_1h.ema20
+    )
+    rsi_ok = item_15m.rsi < 72 and item_1h.rsi < 72
+    flow_ok = flow_amount is not None and flow_amount >= 100_000
+    confirm_ok = confirm is None or confirm.price_change_pct >= 0.20
+    orderbook_ok = order_book is None or order_book.imbalance_pct > -10
+
+    if trend_strong and ema_ok and rsi_ok and flow_ok and confirm_ok and orderbook_ok and fake_score <= 1:
+        return "GÜÇLÜ YÜKSELİŞ ALARMI 🟢🚀"
+    return None
+
+
 def _trade_setup_values(
     symbol_analysis: SymbolAnalysis,
     entry_allowed: bool,
@@ -2016,6 +2057,20 @@ def build_report(
                 [rocket]
                 if (
                     rocket := _rocket_line(
+                        symbol_analysis,
+                        flow_stats,
+                        confirm_stats,
+                        order_book if isinstance(order_book, OrderBookPressure) else None,
+                        entry_allowed,
+                        altcoin_blocked,
+                    )
+                )
+                else []
+            ),
+            *(
+                [strong_rise]
+                if (
+                    strong_rise := _strong_rise_alert_line(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
