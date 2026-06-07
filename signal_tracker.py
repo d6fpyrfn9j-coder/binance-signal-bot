@@ -277,6 +277,8 @@ def _normalize_legacy_records(records: list[dict[str, Any]]) -> None:
         record["side"] = "IZLE"
         record["triggered"] = False
         record["trigger_time_ms"] = None
+        record["pct_1h"] = None
+        record["pct_4h"] = None
         if record.get("status") in {"success", "failed"}:
             record["status"] = "open"
             record["result"] = "Hard no yeniden izlendi"
@@ -325,7 +327,11 @@ def _audit_records_with_binance(records: list[dict[str, Any]], now: dt.datetime)
         symbol = str(record.get("symbol") or "")
         if not created_at or not symbol:
             continue
-        if (now - created_at).total_seconds() > 21_600 and record.get("pct_4h") is not None:
+        if (
+            (now - created_at).total_seconds() > 21_600
+            and record.get("pct_4h") is not None
+            and record.get("status") not in {None, "open"}
+        ):
             continue
         try:
             candles = _price_path(symbol, created_at, now)
@@ -445,12 +451,12 @@ def track_signals(candidates: list[SignalCandidate]) -> SignalTrackerResult:
     _normalize_legacy_records(records)
     candidate_map = {candidate.symbol: candidate for candidate in candidates}
 
+    _audit_records_with_binance(records, now)
     for record in records:
         symbol = str(record.get("symbol") or "")
         candidate = candidate_map.get(symbol)
         if candidate:
             _update_record(record, candidate, now)
-    _audit_records_with_binance(records, now)
 
     for candidate in candidates:
         side = _record_side(candidate)
