@@ -1381,7 +1381,7 @@ def _fake_pump_line(
         return "Fake pump: Yüksek 🔴"
     if score >= 1:
         return "Fake pump: Orta 🟡"
-    return "Fake pump: Düşük 🟢"
+    return None
 
 
 def _big_order_line(order_book: OrderBookPressure | None) -> str | None:
@@ -1398,7 +1398,7 @@ def _big_order_line(order_book: OrderBookPressure | None) -> str | None:
     elif buy_quote > sell_quote * 1.25:
         emoji = "🟢"
     else:
-        emoji = "🟡"
+        return None
     return f"Büyük emir: Alış {_fmt_abs_amount(buy_quote, '$')} / Satış {_fmt_abs_amount(sell_quote, '$')} {emoji}"
 
 
@@ -1670,7 +1670,7 @@ def _real_trade_check_line(
         trigger_closed = close >= entry_value
         trigger_touched = recent_high >= entry_value
         if not trigger_touched:
-            return f"Gerçek: tetik gelmedi | hedef {_fmt_price(target)}"
+            return None
         if not trigger_closed:
             return f"Gerçek: tetik dokundu, 15m kapanış yok 🟡"
         return f"Gerçek: 15m kapanışla tetik görüldü | sonrası izleniyor"
@@ -1696,7 +1696,7 @@ def _simple_trade_lines(
     entry_line: str | None = None,
 ) -> list[str]:
     if entry_line and _is_no_trade_entry(entry_line):
-        return ["Giriş: Yok 🔴", "Plan: Bekle"]
+        return []
 
     day_levels = _day_trade_levels(symbol_analysis)
     if not day_levels:
@@ -1724,16 +1724,10 @@ def _simple_trade_lines(
     target = _day_trade_target(entry_value, levels, risk_pct)
     stop = _day_trade_stop(entry_value, support, risk_pct)
     entry_emoji = "🟢" if entry_allowed else "🟡"
-    lines = [f"Giriş: {entry} {entry_emoji}"]
     if not entry_allowed:
-        lines.append(f"Tetik: 15m kapanış {_fmt_price(entry_value)} üstü 🟡")
-        pullback_high = min(close, support * 1.008)
-        if pullback_high > support:
-            lines.append(f"Geri çekilme: {_fmt_price(support)}-{_fmt_price(pullback_high)}")
-    lines.extend([
-        f"Hedef: {_fmt_price(target)}",
-        f"{stop_label}: {_fmt_price(stop)}" + (" (tetikten sonra)" if not entry_allowed else ""),
-    ])
+        return [f"Giriş: Bekle 🟡 | Tetik {_fmt_price(entry_value)} | H/S {_fmt_price(target)}/{_fmt_price(stop)}"]
+
+    lines = [f"Giriş: {entry} {entry_emoji} | H/S {_fmt_price(target)}/{_fmt_price(stop)}"]
     return lines
 
 
@@ -2113,8 +2107,7 @@ def build_report(
 
         lines.extend([
             "",
-            symbol_analysis.symbol,
-            f"Fiyat: {_fmt_price(display_close)}",
+            f"{symbol_analysis.symbol} | Fiyat: {_fmt_price(display_close)}",
             _simple_decision_line(entry_line),
             _confidence_line(confidence, rr),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
@@ -2196,14 +2189,19 @@ def build_report(
             *(
                 [protection]
                 if (
-                    protection := _protection_line(
+                    entry_allowed
+                    and (protection := _protection_line(
                         setup if isinstance(setup, tuple) else None,
                         display_close,
                         entry_allowed,
-                    )
+                    ))
                 )
                 else []
             ),
-            _simple_alarm_line(alarm_lines if isinstance(alarm_lines, list) else []),
+            *(
+                [_simple_alarm_line(alarm_lines)]
+                if isinstance(alarm_lines, list) and alarm_lines
+                else []
+            ),
         ])
     return "\n".join(lines)
