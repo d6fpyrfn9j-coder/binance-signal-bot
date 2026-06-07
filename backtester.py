@@ -362,12 +362,14 @@ def _symbol_weights(events: list[SignalEvent], min_confidence: int, min_rr: floa
         elif closed >= 3 and win_rate >= 0.65:
             adjustment += 5
             note = "geçmiş başarı iyi 🟢"
-        if missed >= 3 and closed <= 2:
-            adjustment += 6
-            note = "geçmişte fırsat kaçtı 🟡"
+        opportunity_watch = missed >= 3 and closed <= 2
+        if opportunity_watch:
+            adjustment += 8
+            note = "Fırsat radarı 🟡"
         if protected >= 5 and wins == 0:
-            adjustment -= 4
-            note = "fırsat var ama temkinli 🟡" if adjustment > 0 else "koruma baskın, temkinli 🔴"
+            adjustment -= 2 if opportunity_watch else 4
+            if not opportunity_watch:
+                note = "koruma baskın, temkinli 🔴"
 
         payload[symbol] = {
             "confidence_adjustment": max(-15, min(10, adjustment)),

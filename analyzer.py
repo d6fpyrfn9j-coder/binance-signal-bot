@@ -538,6 +538,12 @@ def _flow_strength(value: float | None) -> str:
     return "güçlü"
 
 
+def _show_learning_note(note: object, confidence: int) -> bool:
+    if not isinstance(note, str):
+        return False
+    return confidence >= 45 or "Fırsat" in note or "fırsat" in note
+
+
 def _flow_totals(stats: dict[str, MarketStat] | None) -> tuple[float, float, float] | None:
     if not stats:
         return None
@@ -2192,8 +2198,8 @@ def build_report(
             _confidence_line(confidence, rr),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
             *([str(quality_line)] if isinstance(quality_line, str) and confidence >= 45 else []),
-            *([str(performance_note)] if isinstance(performance_note, str) and confidence >= 45 else []),
-            *([str(optimized_note)] if isinstance(optimized_note, str) and confidence >= 45 else []),
+            *([str(performance_note)] if _show_learning_note(performance_note, confidence) else []),
+            *([str(optimized_note)] if _show_learning_note(optimized_note, confidence) else []),
             *([big_order] if (big_order := _big_order_line(order_book if isinstance(order_book, OrderBookPressure) else None)) else []),
             *(
                 [fake_line]
