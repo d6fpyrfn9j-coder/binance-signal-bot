@@ -1546,6 +1546,83 @@ def _strong_rise_alert_line(
     return None
 
 
+def _dip_reversal_line(
+    symbol_analysis: SymbolAnalysis,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    order_book: OrderBookPressure | None,
+    altcoin_blocked: bool,
+) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    day_levels = _day_trade_levels(symbol_analysis)
+    if not item_15m or not item_1h or not item_4h or not day_levels:
+        return None
+
+    close, support, resistance, _ = day_levels
+    if support <= 0:
+        return None
+
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    near_support_pct = ((close - support) / support) * 100
+    support_broken = close <= support or item_15m.close <= item_15m.support or item_1h.close <= item_1h.support
+    near_support = 0 <= near_support_pct <= 1.8
+    oversold = item_15m.rsi <= 40 or item_1h.rsi <= 42 or item_4h.rsi <= 42
+    reversal_candle = item_15m.candle_pattern in {"Hammer", "Bullish Engulfing"} or item_1h.candle_pattern in {
+        "Hammer",
+        "Bullish Engulfing",
+    }
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book),
+        _fake_risk_score(item_1h, order_book),
+    )
+    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -20)
+    selling_pressure = (
+        item_15m.taker_delta_pct <= -12
+        or item_1h.trend_score <= -5
+        or (flow_amount is not None and flow_amount <= -50_000)
+        or orderbook_weak
+    )
+    selling_slowed = (
+        item_15m.taker_delta_pct > -10
+        and (flow_amount is None or flow_amount > -50_000)
+        and fake_score <= 2
+        and not orderbook_weak
+    )
+    confirmation_flow = (
+        flow_amount is not None
+        and flow_amount >= 25_000
+        and (confirm is None or confirm.price_change_pct >= -0.10)
+    )
+    turn_confirmed = (
+        close > support
+        and item_15m.close >= item_15m.ema20
+        and item_15m.trend_score >= 3
+        and item_1h.trend_score >= 0
+        and confirmation_flow
+        and fake_score <= 1
+        and not orderbook_weak
+    )
+
+    if support_broken and selling_pressure:
+        return f"DÜŞEN BIÇAK 🔴 | destek {_fmt_price(support)} kırıldı"
+    if turn_confirmed:
+        if altcoin_blocked:
+            return "DÖNÜŞ VAR ama BTC zayıf ⚠️"
+        return f"DÖNÜŞ TEYİDİ 🟢 | destek {_fmt_price(support)} korundu"
+    if near_support and oversold and selling_slowed:
+        if altcoin_blocked:
+            return f"DİP BÖLGESİ 🟡 | BTC zayıf, destek {_fmt_price(support)}"
+        if reversal_candle:
+            return f"DİP BÖLGESİ 🟡 | kademeli izle, destek {_fmt_price(support)}"
+        return f"DİP YAKIN 🟡 | teyit {_fmt_price(resistance)} üstü"
+    return None
+
+
 def _trade_setup_values(
     symbol_analysis: SymbolAnalysis,
     entry_allowed: bool,
@@ -2049,6 +2126,19 @@ def build_report(
                         symbol_analysis,
                         order_book if isinstance(order_book, OrderBookPressure) else None,
                         onchain_flow if isinstance(onchain_flow, OnChainFlow) else None,
+                    )
+                )
+                else []
+            ),
+            *(
+                [dip_reversal]
+                if (
+                    dip_reversal := _dip_reversal_line(
+                        symbol_analysis,
+                        flow_stats,
+                        confirm_stats,
+                        order_book if isinstance(order_book, OrderBookPressure) else None,
+                        altcoin_blocked,
                     )
                 )
                 else []
