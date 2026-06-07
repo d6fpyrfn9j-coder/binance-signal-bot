@@ -11,6 +11,7 @@ from data_fetcher import MarketStat, OrderBookPressure
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
+from signal_weights import load_signal_weights
 from signal_tracker import SignalCandidate, SignalPerformanceProfile, load_signal_performance_profile, track_signals
 
 
@@ -1995,6 +1996,9 @@ def build_report(
     confidence_scores: list[int] = []
     news_impact = _news_impact(market_context)
     performance_profile = load_signal_performance_profile()
+    optimized_weights = load_signal_weights()
+    min_entry_confidence = optimized_weights.min_entry_confidence or MIN_ENTRY_CONFIDENCE
+    min_entry_rr = optimized_weights.min_entry_rr or MIN_ENTRY_RR
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
@@ -2049,7 +2053,9 @@ def build_report(
         )
         performance_adjust = performance_profile.adjustment_for(symbol_analysis.symbol)
         performance_note = performance_profile.note_for(symbol_analysis.symbol)
-        confidence = _clamp(confidence + quality_adjust + performance_adjust)
+        optimized_adjust = optimized_weights.adjustment_for(symbol_analysis.symbol)
+        optimized_note = optimized_weights.note_for(symbol_analysis.symbol)
+        confidence = _clamp(confidence + quality_adjust + performance_adjust + optimized_adjust)
 
         if entry_allowed and quality_adjust <= -8:
             entry_line = "Giriş: BEKLE 🟡 | kalite filtresi"
@@ -2068,12 +2074,12 @@ def build_report(
                 market_context,
                 rr,
             )
-            confidence = _clamp(confidence + quality_adjust + performance_adjust)
+            confidence = _clamp(confidence + quality_adjust + performance_adjust + optimized_adjust)
         if entry_allowed:
             quality_reasons: list[str] = []
-            if confidence < MIN_ENTRY_CONFIDENCE:
+            if confidence < min_entry_confidence:
                 quality_reasons.append("güven düşük")
-            if rr is None or rr < MIN_ENTRY_RR:
+            if rr is None or rr < min_entry_rr:
                 quality_reasons.append("R/R düşük")
             if quality_reasons:
                 entry_line = f"Giriş: BEKLE 🟡 | {', '.join(quality_reasons)}"
@@ -2092,7 +2098,7 @@ def build_report(
                     market_context,
                     rr,
                 )
-                confidence = _clamp(confidence + quality_adjust + performance_adjust)
+                confidence = _clamp(confidence + quality_adjust + performance_adjust + optimized_adjust)
         confidence_scores.append(confidence)
 
         frames = _timeframe_map(symbol_analysis)
@@ -2110,7 +2116,7 @@ def build_report(
                     recent_low=item_15m.recent_low,
                     confidence=confidence,
                     rr=rr or 0.0,
-                    active=entry_allowed and confidence >= MIN_ENTRY_CONFIDENCE and (rr or 0.0) >= MIN_ENTRY_RR,
+                    active=entry_allowed and confidence >= min_entry_confidence and (rr or 0.0) >= min_entry_rr,
                     decision=entry_line,
                     needs_trigger=needs_trigger,
                 )
@@ -2131,6 +2137,7 @@ def build_report(
                 "setup": setup,
                 "quality_line": quality_line,
                 "performance_note": performance_note,
+                "optimized_note": optimized_note,
             }
         )
 
@@ -2176,6 +2183,7 @@ def build_report(
         setup = item["setup"]
         quality_line = item["quality_line"]
         performance_note = item["performance_note"]
+        optimized_note = item["optimized_note"]
 
         lines.extend([
             "",
@@ -2185,6 +2193,7 @@ def build_report(
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
             *([str(quality_line)] if isinstance(quality_line, str) and confidence >= 45 else []),
             *([str(performance_note)] if isinstance(performance_note, str) and confidence >= 45 else []),
+            *([str(optimized_note)] if isinstance(optimized_note, str) and confidence >= 45 else []),
             *([big_order] if (big_order := _big_order_line(order_book if isinstance(order_book, OrderBookPressure) else None)) else []),
             *(
                 [fake_line]

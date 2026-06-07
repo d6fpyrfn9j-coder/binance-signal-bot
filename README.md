@@ -16,6 +16,8 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - `R/R` rengi guven puanina baglidir; guven kirmiziyken R/R yesil yanmaz.
 - Tetik seviyesi sadece fitil/dokunma degildir; bot 15m kapanis teyidi arar.
 - Bot kendi Telegram sinyallerini Binance 15m mumlariyla karsilastirir; fake tetik, korunan zarar, stop ve kacan firsat sayar.
+- `backtester.py` gecmis Binance mumlariyla gercek backtest yapar; en iyi guven/RR esiklerini ve coin agirliklarini `signal_weights.json` dosyasina yazar.
+- `signal_weights.json` varsa bot bu optimize agirliklari otomatik kullanir.
 - Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
@@ -53,6 +55,8 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - `analyzer.py`: Trend, destek/direnc ve risk uyarilari.
 - `telegram_sender.py`: Telegram mesaj gonderimi.
 - `websocket_worker.py`: Binance WebSocket akisini surekli izleyen worker.
+- `backtester.py`: Gecmis Binance mumlariyla backtest ve otomatik agirlik optimizasyonu.
+- `signal_weights.py`: Optimize agirlik dosyasini okur.
 - `telegram_setup.py`: Bot icin chat id bulma yardimcisi.
 - `main.py`: Saatlik calisma dongusu.
 - `.env.example`: Ornek Telegram ayarlari.
@@ -105,6 +109,8 @@ SIGNAL_AUDIT_WINDOW_SECONDS=14400
 PERFORMANCE_LEARNING_ENABLED=true
 QUALITY_LOW_24H_VOLUME=30000000
 QUALITY_LOW_FLOW_VOLUME=75000
+SIGNAL_WEIGHTS_ENABLED=true
+SIGNAL_WEIGHTS_FILE=signal_weights.json
 ```
 
 Chat ID bilmiyorsan:
@@ -131,6 +137,19 @@ Telegram'a gondermeden sadece terminalde gormek icin:
 ```bash
 python3 main.py --once --no-telegram
 ```
+
+Backtest ve otomatik optimizasyon icin:
+
+```bash
+python3 backtester.py --days 30 --sample-every 8
+```
+
+Bu komut:
+
+- `backtest_results.json` icine detayli gecmis test sonucunu yazar.
+- `signal_weights.json` icine botun kullanacagi optimize guven/RR ve coin agirliklarini yazar.
+
+GitHub Actions icindeki `Backtest Optimize` workflow'u her gun otomatik calisir ve `signal_weights.json` degisirse repo'ya commit eder.
 
 4. 5 dakikada bir calistir.
 

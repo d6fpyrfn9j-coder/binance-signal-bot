@@ -3,6 +3,7 @@ bot.log
 bot.pid
 bot_runner.log
 signal_history.json
+backtest_results.json
 launchd.out.log
 launchd.err.log
 __pycache__/
