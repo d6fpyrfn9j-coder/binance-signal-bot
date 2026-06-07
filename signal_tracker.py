@@ -19,6 +19,7 @@ MAX_RECORDS_TO_AUDIT = int(os.getenv("MAX_SIGNAL_AUDIT_RECORDS", "30"))
 MIN_TRACK_TRIGGER_CONFIDENCE = int(os.getenv("MIN_TRACK_TRIGGER_CONFIDENCE", "55"))
 MIN_TRACK_TRIGGER_RR = float(os.getenv("MIN_TRACK_TRIGGER_RR", "2.0"))
 MIN_TRACK_OBSERVE_CONFIDENCE = int(os.getenv("MIN_TRACK_OBSERVE_CONFIDENCE", "40"))
+AUDIT_WINDOW_SECONDS = int(os.getenv("SIGNAL_AUDIT_WINDOW_SECONDS", "14400"))
 
 
 @dataclass(frozen=True)
@@ -107,8 +108,8 @@ def _record_side(candidate: SignalCandidate) -> str:
     return "IZLE"
 
 
-def _is_hard_no(candidate: SignalCandidate) -> bool:
-    decision = candidate.decision.upper()
+def _has_hard_no_marker(decision: str) -> bool:
+    text = decision.upper()
     hard_markers = (
         "HAYIR",
         "GİRİŞ YOK",
@@ -123,7 +124,11 @@ def _is_hard_no(candidate: SignalCandidate) -> bool:
         "R/R DÜŞÜK",
         "GÜVEN DÜŞÜK",
     )
-    return any(marker in decision for marker in hard_markers)
+    return any(marker in text for marker in hard_markers)
+
+
+def _is_hard_no(candidate: SignalCandidate) -> bool:
+    return _has_hard_no_marker(candidate.decision)
 
 
 def _is_actionable_trigger(candidate: SignalCandidate) -> bool:
@@ -137,7 +142,8 @@ def _is_actionable_trigger(candidate: SignalCandidate) -> bool:
 
 def _price_path(symbol: str, created_at: dt.datetime, now: dt.datetime) -> list[Candle]:
     start_ms = int(created_at.timestamp() * 1000)
-    end_ms = int(now.timestamp() * 1000)
+    audit_end = min(now, created_at + dt.timedelta(seconds=AUDIT_WINDOW_SECONDS + 900))
+    end_ms = int(audit_end.timestamp() * 1000)
     return fetch_binance_klines_range(symbol, "15m", start_ms, end_ms, limit=500)
 
 
@@ -180,8 +186,12 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
     triggered = bool(record.get("triggered"))
     fake_touches = int(record.get("fake_touches") or 0)
     trigger_time_ms = int(record.get("trigger_time_ms") or 0)
+    deadline_ms = int((created_at + dt.timedelta(seconds=AUDIT_WINDOW_SECONDS)).timestamp() * 1000)
 
     for candle in candles:
+        if candle.open_time > deadline_ms:
+            break
+
         if side == "AL":
             if candle.low <= stop:
                 _close_record(record, "failed", "Stop", candle.close_time)
@@ -193,6 +203,8 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
 
         if side == "TETIK":
             if not triggered:
+                if candle.close_time > deadline_ms:
+                    break
                 if candle.close >= entry:
                     triggered = True
                     trigger_time_ms = candle.close_time
@@ -210,6 +222,8 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
             if triggered:
                 if trigger_time_ms and candle.close_time <= trigger_time_ms:
                     continue
+                if candle.close_time > deadline_ms:
+                    break
                 # Conservative order: if stop and target happen in the same 15m candle, count risk first.
                 if candle.low <= stop:
                     _close_record(record, "failed", "Tetik sonrası stop", candle.close_time)
@@ -220,6 +234,8 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
             continue
 
         if side == "IZLE":
+            if candle.close_time > deadline_ms:
+                break
             if candle.low <= stop:
                 _close_record(record, "protected", "İzle kararı zararı korudu", candle.close_time)
                 break
@@ -249,6 +265,22 @@ def _audit_price_path(record: dict[str, Any], candles: list[Candle], now: dt.dat
                 record["status"] = "protected"
                 record["result"] = "Tetik gelmedi"
             record["closed_at"] = now.isoformat()
+
+
+def _normalize_legacy_records(records: list[dict[str, Any]]) -> None:
+    for record in records:
+        decision = str(record.get("decision") or "")
+        side = str(record.get("side") or "")
+        if side not in {"AL", "TETIK"} or not _has_hard_no_marker(decision):
+            continue
+
+        record["side"] = "IZLE"
+        record["triggered"] = False
+        record["trigger_time_ms"] = None
+        if record.get("status") in {"success", "failed"}:
+            record["status"] = "open"
+            record["result"] = "Hard no yeniden izlendi"
+            record.pop("closed_at", None)
 
 
 def _update_record(record: dict[str, Any], candidate: SignalCandidate, now: dt.datetime) -> None:
@@ -410,6 +442,7 @@ def track_signals(candidates: list[SignalCandidate]) -> SignalTrackerResult:
     path = _history_path()
     records = _load_records(path)
     now = _now_utc()
+    _normalize_legacy_records(records)
     candidate_map = {candidate.symbol: candidate for candidate in candidates}
 
     for record in records:
