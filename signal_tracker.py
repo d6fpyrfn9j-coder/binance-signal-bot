@@ -124,6 +124,7 @@ def _record_side(candidate: SignalCandidate) -> str:
 def _has_hard_no_marker(decision: str) -> bool:
     text = decision.upper()
     hard_markers = (
+        "BEKLE",
         "HAYIR",
         "GİRİŞ YOK",
         "BTC ZAYIF",
