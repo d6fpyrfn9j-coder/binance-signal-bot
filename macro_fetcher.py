@@ -102,7 +102,7 @@ def _headline_match(titles: list[str], keywords: tuple[str, ...]) -> str | None:
         lower_title = title.lower()
         if any(keyword in lower_title for keyword in keywords):
             return title
-    return titles[0] if titles else None
+    return None
 
 
 def _etf_signal(titles: list[str]) -> NewsSignal:

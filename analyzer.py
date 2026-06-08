@@ -1768,9 +1768,9 @@ def _simple_trade_lines(
     stop = _day_trade_stop(entry_value, support, risk_pct)
     entry_emoji = "🟢" if entry_allowed else "🟡"
     if not entry_allowed:
-        return [f"Giriş: Bekle 🟡 | Tetik {_fmt_price(entry_value)} | H/S {_fmt_price(target)}/{_fmt_price(stop)}"]
+        return [f"Giriş: Bekle 🟡 | Tetik {_fmt_price(entry_value)} | Hedef {_fmt_price(target)} | Stop {_fmt_price(stop)}"]
 
-    lines = [f"Giriş: {entry} {entry_emoji} | H/S {_fmt_price(target)}/{_fmt_price(stop)}"]
+    lines = [f"Giriş: {entry} {entry_emoji} | Hedef {_fmt_price(target)} | Stop {_fmt_price(stop)}"]
     return lines
 
 
@@ -1928,39 +1928,53 @@ def _correction_rotation(
         or (btc_1h and btc_1h.price_change_pct <= -0.25)
     )
 
-    negative_symbols = [
-        symbol
-        for symbol in tracked
-        if (stat := flow_stats.get(symbol)) and stat.price_change_pct < 0
-    ]
-    positive_symbols = [
-        symbol
-        for symbol in tracked
-        if (stat := flow_stats.get(symbol)) and stat.price_change_pct > 0
-    ]
+    instant_amounts, instant_symbols = _sector_flow_amounts(flow_stats, sectors)
+    positive_total = sum(amount for amount in instant_amounts.values() if amount > 0)
+    negative_total = sum(-amount for amount in instant_amounts.values() if amount < 0)
+    total_flow = positive_total - negative_total
+    negative_symbols = []
+    for symbol in tracked:
+        stat = flow_stats.get(symbol)
+        amount = _flow_pressure_usd(stat) if stat else None
+        if amount is not None and (amount < -25_000 or stat.price_change_pct < 0):
+            negative_symbols.append(symbol)
 
     if not btc_soft and len(negative_symbols) < max(2, len(tracked) // 2):
         return None
 
-    if sectors and positive_symbols:
-        sector_scores: dict[str, float] = {}
-        sector_symbols: dict[str, list[str]] = {}
-        for symbol in positive_symbols:
-            sector = sectors.get(symbol)
-            stat = flow_stats.get(symbol)
-            if not sector or not stat:
-                continue
-            sector_scores[sector] = sector_scores.get(sector, 0.0) + stat.quote_volume * stat.price_change_pct
-            sector_symbols.setdefault(sector, []).append(symbol.replace("USDT", ""))
-        if sector_scores:
-            leader, score = max(sector_scores.items(), key=lambda item: item[1])
-            if score > 0:
-                names = ", ".join(sector_symbols.get(leader, [])[:3])
-                return f"Düzeltme: Para {leader} tarafına kayıyor ({names})"
-
     negative_ratio = len(negative_symbols) / len(tracked)
-    if negative_ratio >= 0.70:
-        return "Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor"
+    if negative_total > positive_total * 1.25 and total_flow <= -25_000:
+        positive_sectors = {
+            sector: amount
+            for sector, amount in instant_amounts.items()
+            if amount > 25_000
+        }
+        if negative_ratio >= 0.70 or not positive_sectors:
+            return "Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor"
+        leader, _ = max(positive_sectors.items(), key=lambda item: item[1])
+        names = ", ".join(
+            symbol.replace("USDT", "")
+            for amount, symbol in sorted(instant_symbols.get(leader, []), reverse=True)
+            if amount > 0
+        )
+        suffix = f" ({names[:24]})" if names else ""
+        return f"Düzeltme: Net çıkış var; en güçlü {leader}{suffix}"
+
+    if instant_amounts:
+        positive_sectors = {
+            sector: amount
+            for sector, amount in instant_amounts.items()
+            if amount > max(50_000, negative_total * 0.8)
+        }
+        if positive_sectors:
+            leader, _ = max(positive_sectors.items(), key=lambda item: item[1])
+            names = ", ".join(
+                symbol.replace("USDT", "")
+                for amount, symbol in sorted(instant_symbols.get(leader, []), reverse=True)
+                if amount > 0
+            )
+            suffix = f" ({names[:24]})" if names else ""
+            return f"Düzeltme: Para {leader} tarafına kayıyor{suffix}"
 
     if confirm_stats:
         confirm_positive = [
