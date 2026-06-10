@@ -1427,6 +1427,70 @@ def _fake_pump_line(
     return None
 
 
+def _profit_guard_line(
+    symbol_analysis: SymbolAnalysis,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    order_book: OrderBookPressure | None,
+) -> str | None:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    day_levels = _day_trade_levels(symbol_analysis)
+    if not item_15m or not item_1h or not day_levels:
+        return None
+
+    close, _, resistance, _ = day_levels
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    buy_wall = order_book.nearest_buy_wall_quote if order_book else 0.0
+    sell_wall = order_book.nearest_sell_wall_quote if order_book else 0.0
+
+    recent_rise = (
+        item_15m.change_pct >= 0.45
+        or item_15m.momentum_pct >= 1.8
+        or item_1h.change_pct >= 1.0
+        or item_1h.momentum_pct >= 2.5
+    )
+    near_resistance = close >= resistance * 0.988 or item_15m.recent_high >= resistance
+    upper_band = item_15m.close >= item_15m.bollinger_upper * 0.995
+    failed_breakout = item_15m.recent_high >= resistance and item_15m.close < resistance
+    sell_wall_heavy = sell_wall > 0 and sell_wall > max(buy_wall, 1.0) * 1.35
+    selling_started = (
+        (flow_amount is not None and flow_amount <= -25_000)
+        or item_15m.taker_delta_pct <= -8
+        or item_1h.taker_delta_pct <= -6
+        or (order_book is not None and order_book.imbalance_pct <= -10)
+        or sell_wall_heavy
+    )
+    overheated = (
+        item_15m.rsi >= 68
+        or item_1h.rsi >= 68
+        or item_15m.fake_rise_risk
+        or item_1h.fake_rise_risk
+        or item_15m.distribution_risk
+        or item_1h.distribution_risk
+    )
+    confirm_weak = bool(confirm and confirm.price_change_pct <= -0.15)
+
+    score = 0
+    score += 1 if near_resistance else 0
+    score += 1 if upper_band else 0
+    score += 1 if failed_breakout else 0
+    score += 1 if selling_started else 0
+    score += 1 if overheated else 0
+    score += 1 if confirm_weak else 0
+
+    if recent_rise and score >= 4:
+        if failed_breakout or selling_started:
+            return "KÂR KORU 🔴 | yükselişten sonra satış riski"
+        return "KÂR KORU 🔴 | yükseliş yoruldu"
+    if recent_rise and score >= 3:
+        return "KÂR KORU 🟡 | geri çekilme riski"
+    return None
+
+
 def _big_order_line(order_book: OrderBookPressure | None) -> str | None:
     if not order_book:
         return None
@@ -2215,6 +2279,18 @@ def build_report(
             *([str(performance_note)] if _show_learning_note(performance_note, confidence) else []),
             *([str(optimized_note)] if _show_learning_note(optimized_note, confidence) else []),
             *([big_order] if (big_order := _big_order_line(order_book if isinstance(order_book, OrderBookPressure) else None)) else []),
+            *(
+                [guard_line]
+                if (
+                    guard_line := _profit_guard_line(
+                        symbol_analysis,
+                        flow_stats,
+                        confirm_stats,
+                        order_book if isinstance(order_book, OrderBookPressure) else None,
+                    )
+                )
+                else []
+            ),
             *(
                 [fake_line]
                 if (
