@@ -591,6 +591,15 @@ def _top_flow_symbol(items: list[tuple[float, str]]) -> str | None:
     return f"{symbol.replace('USDT', '')} {_fmt_amount(amount, '$')}"
 
 
+def _top_flow_names(items: list[tuple[float, str]], limit: int = 3) -> str:
+    positives = [
+        symbol.replace("USDT", "")
+        for amount, symbol in sorted(items, reverse=True)
+        if amount > 0
+    ]
+    return ", ".join(positives[:limit])
+
+
 def _symbol_flow_line(
     symbol: str,
     flow_stats: dict[str, MarketStat] | None,
@@ -1427,6 +1436,16 @@ def _fake_pump_line(
     return None
 
 
+def _reentry_zone(close: float, support: float, levels: list[float]) -> str:
+    lower_levels = [level for level in levels if level < close * 0.998]
+    base = lower_levels[-1] if lower_levels else support
+    low = base * 0.996
+    high = min(base * 1.008, close * 0.998)
+    if high <= low:
+        return _fmt_price(base)
+    return f"{_fmt_price(low)}-{_fmt_price(high)}"
+
+
 def _profit_guard_line(
     symbol_analysis: SymbolAnalysis,
     flow_stats: dict[str, MarketStat] | None,
@@ -1440,12 +1459,14 @@ def _profit_guard_line(
     if not item_15m or not item_1h or not day_levels:
         return None
 
-    close, _, resistance, _ = day_levels
+    close, support, resistance, levels = day_levels
     flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
     confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
     flow_amount = _flow_pressure_usd(flow)
     buy_wall = order_book.nearest_buy_wall_quote if order_book else 0.0
     sell_wall = order_book.nearest_sell_wall_quote if order_book else 0.0
+    reentry = _reentry_zone(close, support, levels)
+    continuation = resistance * 1.003
 
     recent_rise = (
         item_15m.change_pct >= 0.45
@@ -1484,10 +1505,10 @@ def _profit_guard_line(
 
     if recent_rise and score >= 4:
         if failed_breakout or selling_started:
-            return "KÂR KORU 🔴 | yükselişten sonra satış riski"
-        return "KÂR KORU 🔴 | yükseliş yoruldu"
+            return f"ÇIKIŞ BÖLGESİ 🔴 | tekrar alım {reentry}"
+        return f"KÂR KORU 🔴 | yükseliş yoruldu, alım {reentry}"
     if recent_rise and score >= 3:
-        return "KÂR KORU 🟡 | geri çekilme riski"
+        return f"KISMİ ÇIKIŞ 🟡 | devam {_fmt_price(continuation)} üstü"
     return None
 
 
@@ -2016,12 +2037,8 @@ def _correction_rotation(
         if negative_ratio >= 0.70 or not positive_sectors:
             return "Düzeltme: Para coinlerden çıkıp USDT tarafında bekliyor"
         leader, _ = max(positive_sectors.items(), key=lambda item: item[1])
-        names = ", ".join(
-            symbol.replace("USDT", "")
-            for amount, symbol in sorted(instant_symbols.get(leader, []), reverse=True)
-            if amount > 0
-        )
-        suffix = f" ({names[:24]})" if names else ""
+        names = _top_flow_names(instant_symbols.get(leader, []))
+        suffix = f" ({names})" if names else ""
         return f"Düzeltme: Net çıkış var; en güçlü {leader}{suffix}"
 
     if instant_amounts:
@@ -2032,12 +2049,8 @@ def _correction_rotation(
         }
         if positive_sectors:
             leader, _ = max(positive_sectors.items(), key=lambda item: item[1])
-            names = ", ".join(
-                symbol.replace("USDT", "")
-                for amount, symbol in sorted(instant_symbols.get(leader, []), reverse=True)
-                if amount > 0
-            )
-            suffix = f" ({names[:24]})" if names else ""
+            names = _top_flow_names(instant_symbols.get(leader, []))
+            suffix = f" ({names})" if names else ""
             return f"Düzeltme: Para {leader} tarafına kayıyor{suffix}"
 
     if confirm_stats:
