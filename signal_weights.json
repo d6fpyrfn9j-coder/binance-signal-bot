@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-11T17:08:12.982538+00:00",
+  "generated_at": "2026-06-12T14:18:25.602239+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -15,39 +15,39 @@
     "FETUSDT"
   ],
   "optimized": {
-    "min_entry_confidence": 55,
-    "min_entry_rr": 2.5
+    "min_entry_confidence": 65,
+    "min_entry_rr": 2.0
   },
   "metrics": {
-    "trades": 10,
-    "wins": 0,
-    "losses": 5,
-    "win_rate": 0.0,
-    "avg_return_pct": -0.2896382839541347,
-    "total_return_pct": -2.606744555587212,
-    "max_loss_pct": -1.2000000000000093,
-    "missed": 31,
-    "protected": 2767
+    "trades": 9,
+    "wins": 1,
+    "losses": 3,
+    "win_rate": 25.0,
+    "avg_return_pct": -0.0159972336872153,
+    "total_return_pct": -0.1279778694977224,
+    "max_loss_pct": -1.8000000000000076,
+    "missed": 34,
+    "protected": 2753
   },
   "symbols": {
     "BNBUSDT": {
       "confidence_adjustment": 6,
-      "trades": 3,
+      "trades": 2,
       "wins": 0,
       "losses": 1,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 175,
+      "protected": 174,
       "note": "Fırsat radarı 🟡"
     },
     "BTCUSDT": {
       "confidence_adjustment": -4,
-      "trades": 1,
+      "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 1,
-      "protected": 292,
+      "missed": 2,
+      "protected": 296,
       "note": "koruma baskın, temkinli 🔴"
     },
     "ETHUSDT": {
@@ -56,69 +56,69 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 2,
-      "protected": 260,
+      "missed": 1,
+      "protected": 262,
       "note": "koruma baskın, temkinli 🔴"
     },
     "FETUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 0,
-      "wins": 0,
+      "confidence_adjustment": 8,
+      "trades": 1,
+      "wins": 1,
       "losses": 0,
-      "win_rate": 0.0,
-      "missed": 9,
-      "protected": 322,
+      "win_rate": 100.0,
+      "missed": 4,
+      "protected": 320,
       "note": "Fırsat radarı 🟡"
     },
     "LINKUSDT": {
       "confidence_adjustment": -4,
-      "trades": 0,
+      "trades": 1,
       "wins": 0,
-      "losses": 0,
+      "losses": 1,
       "win_rate": 0.0,
-      "missed": 1,
+      "missed": 0,
       "protected": 238,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
       "confidence_adjustment": 6,
-      "trades": 1,
-      "wins": 0,
-      "losses": 1,
-      "win_rate": 0.0,
-      "missed": 7,
-      "protected": 328,
-      "note": "Fırsat radarı 🟡"
-    },
-    "ONDOUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 2,
-      "wins": 0,
-      "losses": 1,
-      "win_rate": 0.0,
-      "missed": 3,
-      "protected": 333,
-      "note": "Fırsat radarı 🟡"
-    },
-    "SOLUSDT": {
-      "confidence_adjustment": -4,
-      "trades": 2,
-      "wins": 0,
-      "losses": 2,
-      "win_rate": 0.0,
-      "missed": 0,
-      "protected": 295,
-      "note": "koruma baskın, temkinli 🔴"
-    },
-    "SUIUSDT": {
-      "confidence_adjustment": -4,
       "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
+      "missed": 10,
+      "protected": 324,
+      "note": "Fırsat radarı 🟡"
+    },
+    "ONDOUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 3,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "missed": 6,
+      "protected": 322,
+      "note": "Fırsat radarı 🟡"
+    },
+    "SOLUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 1,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
       "missed": 2,
-      "protected": 312,
+      "protected": 291,
       "note": "koruma baskın, temkinli 🔴"
+    },
+    "SUIUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 3,
+      "protected": 312,
+      "note": "Fırsat radarı 🟡"
     },
     "XRPUSDT": {
       "confidence_adjustment": 6,
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 212,
+      "protected": 214,
       "note": "Fırsat radarı 🟡"
     }
   }
