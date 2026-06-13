@@ -26,12 +26,25 @@ from onchain_fetcher import OnChainFlow, StablecoinReserve, fetch_onchain_flows,
 from telegram_sender import send_telegram_message
 
 
-CORE_SYMBOLS = (
+def _symbols_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    configured = os.getenv(name)
+    if configured is None:
+        return default
+    symbols = tuple(
+        symbol.strip().upper()
+        for symbol in configured.split(",")
+        if symbol.strip()
+    )
+    return symbols
+
+
+DEFAULT_CORE_SYMBOLS = (
     "BTCUSDT",
     "ETHUSDT",
-    "SOLUSDT",
 )
-ALT_CANDIDATES = (
+DEFAULT_ALT_CANDIDATES: tuple[str, ...] = ()
+AVAILABLE_ALT_CANDIDATES = (
+    "SOLUSDT",
     "BNBUSDT",
     "XRPUSDT",
     "ADAUSDT",
@@ -52,16 +65,18 @@ ALT_CANDIDATES = (
     "STRKUSDT",
     "MANTAUSDT",
 )
-ALL_SYMBOLS = CORE_SYMBOLS + ALT_CANDIDATES
+CORE_SYMBOLS = _symbols_from_env("CORE_SYMBOLS", DEFAULT_CORE_SYMBOLS)
+ALT_CANDIDATES = _symbols_from_env("ALT_CANDIDATES", DEFAULT_ALT_CANDIDATES)
+ALL_SYMBOLS = tuple(dict.fromkeys(CORE_SYMBOLS + ALT_CANDIDATES))
 TIMEFRAMES = ("15m", "1h", "4h")
-MAX_REPORT_SYMBOLS = int(os.getenv("MAX_REPORT_SYMBOLS", "10"))
-MAX_ALT_SYMBOLS = max(1, MAX_REPORT_SYMBOLS - len(CORE_SYMBOLS))
+MAX_REPORT_SYMBOLS = int(os.getenv("MAX_REPORT_SYMBOLS", str(len(ALL_SYMBOLS) or 2)))
+MAX_ALT_SYMBOLS = max(0, min(MAX_REPORT_SYMBOLS - len(CORE_SYMBOLS), len(ALT_CANDIDATES)))
 MIN_ALT_QUOTE_VOLUME = float(os.getenv("MIN_ALT_QUOTE_VOLUME", "20000000"))
 MIN_ALT_5M_QUOTE_VOLUME = float(os.getenv("MIN_ALT_5M_QUOTE_VOLUME", "50000"))
 MIN_ALT_1H_QUOTE_VOLUME = float(os.getenv("MIN_ALT_1H_QUOTE_VOLUME", "250000"))
 SECTORS = {
     "BTCUSDT": "BTC",
-    "ETHUSDT": "Layer 1",
+    "ETHUSDT": "ETH",
     "SOLUSDT": "Layer 1",
     "BNBUSDT": "Layer 1",
     "XRPUSDT": "Layer 1",
@@ -396,6 +411,9 @@ def select_symbols(
     market_stats: dict[str, MarketStat] | None = None,
     confirm_stats: dict[str, MarketStat] | None = None,
 ) -> tuple[str, ...]:
+    if MAX_ALT_SYMBOLS <= 0 or not ALT_CANDIDATES:
+        return CORE_SYMBOLS
+
     ranked: list[tuple[float, str]] = []
     for symbol in ALT_CANDIDATES:
         score = _alt_rank(
