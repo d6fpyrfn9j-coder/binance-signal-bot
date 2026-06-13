@@ -311,21 +311,44 @@ def _score(metrics: BacktestMetrics) -> float:
     return metrics.total_return_pct + metrics.win_rate * 0.08 - abs(metrics.max_loss_pct) * 0.5 - trade_penalty - loss_penalty
 
 
+def _unsafe_metrics(metrics: BacktestMetrics) -> bool:
+    closed = metrics.wins + metrics.losses
+    return closed >= 5 and metrics.losses > metrics.wins and metrics.win_rate < 40 and metrics.total_return_pct < 0
+
+
 def _optimize(events: list[SignalEvent]) -> tuple[dict[str, float], BacktestMetrics]:
     default_settings = {"min_entry_confidence": 65, "min_entry_rr": 2.0}
     default_metrics = _metrics(events, 65, 2.0)
     best_settings = dict(default_settings)
     best_metrics = default_metrics
     best_score = _score(best_metrics)
+    candidates: list[tuple[float, dict[str, float], BacktestMetrics]] = [
+        (best_score, dict(best_settings), best_metrics)
+    ]
 
     for min_confidence in (55, 60, 65, 70, 75):
         for min_rr in (1.5, 2.0, 2.5, 3.0):
             metrics = _metrics(events, min_confidence, min_rr)
             score = _score(metrics)
+            settings = {"min_entry_confidence": min_confidence, "min_entry_rr": min_rr}
+            candidates.append((score, settings, metrics))
             if score > best_score:
                 best_score = score
-                best_settings = {"min_entry_confidence": min_confidence, "min_entry_rr": min_rr}
+                best_settings = settings
                 best_metrics = metrics
+
+    if _unsafe_metrics(best_metrics):
+        safe_candidates = [
+            (score, settings, metrics)
+            for score, settings, metrics in candidates
+            if not _unsafe_metrics(metrics)
+        ]
+        if safe_candidates:
+            best_score, best_settings, best_metrics = max(safe_candidates, key=lambda item: item[0])
+        else:
+            best_settings = {"min_entry_confidence": 75, "min_entry_rr": 3.0}
+            best_metrics = _metrics(events, 75, 3.0)
+
     if (
         best_metrics.trades < MIN_OPTIMIZER_TRADES
         and (

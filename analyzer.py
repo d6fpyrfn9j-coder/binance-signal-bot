@@ -1505,7 +1505,7 @@ def _profit_guard_line(
 
     if recent_rise and score >= 4:
         if failed_breakout or selling_started:
-            return f"ÇIKIŞ BÖLGESİ 🔴 | tekrar alım {reentry}"
+            return f"VARSA ÇIKIŞ 🔴 | tekrar alım {reentry}"
         return f"KÂR KORU 🔴 | yükseliş yoruldu, alım {reentry}"
     if recent_rise and score >= 3:
         return f"KISMİ ÇIKIŞ 🟡 | devam {_fmt_price(continuation)} üstü"
