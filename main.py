@@ -38,6 +38,13 @@ def _symbols_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     return symbols
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    configured = os.getenv(name)
+    if configured is None:
+        return default
+    return configured.strip().lower() in {"1", "true", "yes", "on"}
+
+
 DEFAULT_CORE_SYMBOLS = (
     "BTCUSDT",
     "ETHUSDT",
@@ -66,7 +73,12 @@ AVAILABLE_ALT_CANDIDATES = (
     "MANTAUSDT",
 )
 CORE_SYMBOLS = _symbols_from_env("CORE_SYMBOLS", DEFAULT_CORE_SYMBOLS)
-ALT_CANDIDATES = _symbols_from_env("ALT_CANDIDATES", DEFAULT_ALT_CANDIDATES)
+ALTCOINS_ENABLED = _env_flag("ENABLE_ALTCOINS")
+ALT_CANDIDATES = (
+    _symbols_from_env("ALT_CANDIDATES", DEFAULT_ALT_CANDIDATES)
+    if ALTCOINS_ENABLED
+    else ()
+)
 ALL_SYMBOLS = tuple(dict.fromkeys(CORE_SYMBOLS + ALT_CANDIDATES))
 TIMEFRAMES = ("15m", "1h", "4h")
 MAX_REPORT_SYMBOLS = int(os.getenv("MAX_REPORT_SYMBOLS", str(len(ALL_SYMBOLS) or 2)))

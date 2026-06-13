@@ -2239,9 +2239,11 @@ def build_report(
         )
 
     signal_result = track_signals(candidates)
+    profile = "/".join(analysis.symbol.replace("USDT", "") for analysis in analyses)
     lines = [
         "KRIPTO RAPORU",
         report_time,
+        f"Profil: {profile}",
         _market_mode_line(crash_text, btc_4h_bearish, btc_unavailable, confidence_scores, market_context),
         signal_result.summary_line,
         signal_result.audit_line,

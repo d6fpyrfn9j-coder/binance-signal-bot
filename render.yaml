@@ -5,7 +5,7 @@ services:
     region: frankfurt
     schedule: "*/5 * * * *"
     buildCommand: "true"
-    startCommand: "python main.py --once --pre-scan-seconds 180 --scan-interval 1"
+    startCommand: "python -c \"print('cron disabled; worker sends Telegram reports')\""
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -17,6 +17,8 @@ services:
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES
         value: ""
+      - key: ENABLE_ALTCOINS
+        value: "false"
       - key: BTCUSDT_COST
         sync: false
       - key: ETHUSDT_COST
@@ -40,6 +42,8 @@ services:
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES
         value: ""
+      - key: ENABLE_ALTCOINS
+        value: "false"
       - key: REPORT_INTERVAL_SECONDS
         value: "300"
       - key: WORKER_WARMUP_SECONDS
