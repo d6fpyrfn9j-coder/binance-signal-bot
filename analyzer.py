@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
@@ -19,6 +20,7 @@ MIN_ENTRY_CONFIDENCE = int(os.getenv("MIN_ENTRY_CONFIDENCE", "65"))
 MIN_ENTRY_RR = float(os.getenv("MIN_ENTRY_RR", "2.0"))
 QUALITY_LOW_24H_VOLUME = float(os.getenv("QUALITY_LOW_24H_VOLUME", "30000000"))
 QUALITY_LOW_FLOW_VOLUME = float(os.getenv("QUALITY_LOW_FLOW_VOLUME", "75000"))
+REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "Europe/Brussels")
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,15 @@ def _trend_from_score(score: int) -> str:
     if score <= -5:
         return "bearish"
     return "neutral"
+
+
+def _report_time_line() -> str:
+    try:
+        timezone = ZoneInfo(REPORT_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        timezone = ZoneInfo("Europe/Brussels")
+    now = dt.datetime.now(timezone)
+    return f"Tarih: {now:%d.%m.%Y} | Saat: {now:%H:%M} {now:%Z}"
 
 
 def _swing_levels(candles: list[Candle], lookback: int = 30) -> tuple[float, float]:
@@ -2085,7 +2096,7 @@ def build_report(
     stablecoin_reserve: StablecoinReserve | None = None,
     market_context: MarketContext | None = None,
 ) -> str:
-    report_time = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    report_time = _report_time_line()
     btc_4h_bearish = _btc_4h_bearish(analyses)
     crash_text = _crash_warning(analyses, flow_stats, confirm_stats)
     prepared: list[dict[str, object]] = []

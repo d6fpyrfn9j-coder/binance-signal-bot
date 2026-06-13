@@ -13,6 +13,8 @@ services:
         sync: false
       - key: CRYPTOQUANT_API_KEY
         sync: false
+      - key: REPORT_TIMEZONE
+        value: "Europe/Brussels"
       - key: CORE_SYMBOLS
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES
@@ -38,6 +40,8 @@ services:
         sync: false
       - key: CRYPTOQUANT_API_KEY
         sync: false
+      - key: REPORT_TIMEZONE
+        value: "Europe/Brussels"
       - key: CORE_SYMBOLS
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES
