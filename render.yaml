@@ -32,7 +32,7 @@ services:
     runtime: python
     region: frankfurt
     buildCommand: "python -m pip install -r requirements.txt"
-    startCommand: "python websocket_worker.py"
+    startCommand: "CORE_SYMBOLS=BTCUSDT,ETHUSDT ALT_CANDIDATES= ENABLE_ALTCOINS=false REPORT_TIMEZONE=Europe/Brussels REPORT_PROFILE_VERSION='BTC/ETH v2' python websocket_worker.py"
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -42,6 +42,8 @@ services:
         sync: false
       - key: REPORT_TIMEZONE
         value: "Europe/Brussels"
+      - key: REPORT_PROFILE_VERSION
+        value: "BTC/ETH v2"
       - key: CORE_SYMBOLS
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES

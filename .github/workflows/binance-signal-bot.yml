@@ -28,8 +28,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPORT_TIMEZONE: Europe/Brussels
+          REPORT_PROFILE_VERSION: BTC/ETH v2
           CORE_SYMBOLS: BTCUSDT,ETHUSDT
           ALT_CANDIDATES: ""
+          ENABLE_ALTCOINS: "false"
           MAX_REPORT_SYMBOLS: "2"
           BTCUSDT_COST: ${{ secrets.BTCUSDT_COST }}
           ETHUSDT_COST: ${{ secrets.ETHUSDT_COST }}

@@ -21,6 +21,7 @@ MIN_ENTRY_RR = float(os.getenv("MIN_ENTRY_RR", "2.0"))
 QUALITY_LOW_24H_VOLUME = float(os.getenv("QUALITY_LOW_24H_VOLUME", "30000000"))
 QUALITY_LOW_FLOW_VOLUME = float(os.getenv("QUALITY_LOW_FLOW_VOLUME", "75000"))
 REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "Europe/Brussels")
+REPORT_PROFILE_VERSION = os.getenv("REPORT_PROFILE_VERSION", "BTC/ETH v2")
 
 
 @dataclass(frozen=True)
@@ -2255,6 +2256,7 @@ def build_report(
         "KRIPTO RAPORU",
         report_time,
         f"Profil: {profile}",
+        f"Sürüm: {REPORT_PROFILE_VERSION}",
         _market_mode_line(crash_text, btc_4h_bearish, btc_unavailable, confidence_scores, market_context),
         signal_result.summary_line,
         signal_result.audit_line,
