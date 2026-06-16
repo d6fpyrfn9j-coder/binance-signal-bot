@@ -39,6 +39,7 @@ from data_fetcher import (
     fetch_recent_flow_stats,
     fetch_recent_trade_flow,
 )
+from exchange_fetcher import ExchangeConsensus, fetch_exchange_consensus
 from macro_fetcher import MarketContext, fetch_market_context
 from onchain_fetcher import OnChainFlow, StablecoinReserve, fetch_onchain_flows, fetch_stablecoin_reserve
 from telegram_sender import send_telegram_message
@@ -239,6 +240,7 @@ def create_report(scan: MarketScan | None = None) -> str:
         order_books.update(load_order_books(missing_order_books))
     onchain_flows = load_onchain_flows(symbols)
     stablecoin_reserve = load_stablecoin_reserve()
+    exchange_consensus = load_exchange_consensus(symbols)
     market_context = load_market_context()
     logging.info("Selected symbols: %s", ", ".join(symbols))
 
@@ -264,6 +266,7 @@ def create_report(scan: MarketScan | None = None) -> str:
         order_books=order_books,
         onchain_flows=onchain_flows,
         stablecoin_reserve=stablecoin_reserve,
+        exchange_consensus=exchange_consensus,
         market_context=market_context,
     )
 
@@ -374,6 +377,14 @@ def load_stablecoin_reserve() -> StablecoinReserve | None:
     except Exception:
         logging.exception("Could not fetch stablecoin reserve")
         return None
+
+
+def load_exchange_consensus(symbols: tuple[str, ...]) -> dict[str, ExchangeConsensus]:
+    try:
+        return fetch_exchange_consensus(symbols)
+    except Exception:
+        logging.exception("Could not fetch multi-exchange consensus")
+        return {}
 
 
 def load_market_context() -> MarketContext | None:

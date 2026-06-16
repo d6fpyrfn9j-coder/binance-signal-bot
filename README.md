@@ -20,9 +20,11 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - `signal_weights.json` varsa bot bu optimize agirliklari otomatik kullanir.
 - Verilen giriş/çıkış seviyelerini son gerçek Binance mum aralığıyla karşılaştırıp `Gerçek` satırıyla sonucu yazar.
 - Binance taker alis/satis baskisi ve order-book duvarlarini izleyerek fake yukselis / dagitim riskini ayirmaya calisir.
+- Binance disinda Coinbase, Kraken, OKX, Bybit, KuCoin ve MEXC public ticker verisiyle fiyat/hacim teyidi yapar.
 - Render calismasinda mesajdan once 180 saniye boyunca order book ve gerceklesen alis/satis akisini tarar; rapor tek anlik goruntuye dayanmaz.
 - WebSocket worker modunda bot surekli acik kalir, Binance `aggTrade` ve `depth20` streamlerinden akisi toplar, Telegram'a 5 dakikada bir rapor yollar.
-- `CRYPTOQUANT_API_KEY` eklenirse Binance'e BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
+- `CRYPTOQUANT_API_KEY` eklenirse once tum borsalar, olmazsa Binance icin BTC/ETH net giris-cikis ve stablecoin rezerv degisimini rapora ekler.
+- Borsaya net coin girisi satis riski, borsadan net coin cikisi toplama/soguk cuzdan izi olarak yorumlanir.
 - Ucretsiz haber filtresi ETF, FED, hack ve dava basliklarini tarar; ciddi haber riski varsa AL sinyalini dusurur.
 - `signal_history.json` icinde AL sinyallerini saklar; 1 saat / 4 saat performansi ve son 100 sinyal basari oranini takip eder.
 - Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
@@ -79,6 +81,9 @@ cp .env.example .env
 TELEGRAM_BOT_TOKEN=bot_token
 TELEGRAM_CHAT_ID=chat_id
 CRYPTOQUANT_API_KEY=
+CRYPTOQUANT_EXCHANGES=all_exchange,binance
+MULTI_EXCHANGE_ENABLED=true
+MULTI_EXCHANGE_LIST=binance,coinbase,kraken,okx,bybit,kucoin,mexc
 REPORT_TIMEZONE=Europe/Brussels
 BTCUSDT_COST=
 ETHUSDT_COST=2049
@@ -309,6 +314,8 @@ Uyarı: Yok 🟢
 - Telegram icin BotFather'dan bot token alman gerekir.
 - Chat ID icin kendi Telegram hesabina veya gruba botu ekleyip chat id kullanmalisin.
 - Akış satiri `Anlık Net Akış`, `Teyit Akışı` veya `24s Akış` diye gelir; miktar kucukse sinyali buyutmemek icin `zayif/cok zayif` yazar.
+- `Borsa teyidi` satiri Binance disi borsalarda fiyat ayrismasi var mi gosterir; spread yuksekse sinyal guveni duser.
+- Zincir satiri kesin niyet okumaz; borsaya giris satis riski, borsadan cikis toplama ihtimali olarak yorumlanir.
 - Haber filtresi ucretsiz RSS basliklarindan risk etiketi uretir; kesin ETF dolar akisi icin ayrica profesyonel veri API'si gerekir.
 - Render dosya sistemi servis yeniden deploy olunca sifirlanabilir; uzun vadeli sinyal istatistigi icin sonraki adim kalici veritabani eklemektir.
 - `market_bot.py` onceki kisa piyasa yonu ve piyasa akisi yardimci aracidir; yeni moduler botun ana girisi `main.py` dosyasidir.

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
+from exchange_fetcher import ExchangeConsensus
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
@@ -760,21 +761,33 @@ def _stablecoin_line(stablecoin_reserve: StablecoinReserve | None) -> str | None
         value = stablecoin_reserve.reserve
     if change is None:
         return None
+    exchange_name = _exchange_label(stablecoin_reserve.exchange)
     if change >= 0.2:
-        return f"Zincir: Binance stablecoin +{change:.1f}% | alım gücü artıyor 🟢"
+        return f"Zincir: {exchange_name} stablecoin +{change:.1f}% | alım gücü artıyor 🟢"
     if change <= -0.2:
-        return f"Zincir: Binance stablecoin {change:.1f}% | nakit çıkışı ⚠️"
+        return f"Zincir: {exchange_name} stablecoin {change:.1f}% | nakit çıkışı ⚠️"
     return f"Zincir: Stablecoin yatay | {_fmt_amount(value, '$')}"
+
+
+def _exchange_label(exchange: str | None) -> str:
+    if not exchange:
+        return "Borsa"
+    labels = {
+        "all_exchange": "Tüm borsalar",
+        "binance": "Binance",
+    }
+    return labels.get(exchange, exchange.replace("_", " ").title())
 
 
 def _onchain_line(flow: OnChainFlow | None) -> str | None:
     if not flow or flow.netflow is None:
         return None
     amount = _fmt_amount(flow.netflow, f" {flow.asset}")
+    exchange_name = _exchange_label(flow.exchange)
     if flow.netflow > 0:
-        return f"Zincir: Binance net giriş {amount} ⚠️"
+        return f"Zincir: {exchange_name} giriş {amount} | satış riski ⚠️"
     if flow.netflow < 0:
-        return f"Zincir: Binance net çıkış {amount} ✅"
+        return f"Zincir: {exchange_name} çıkış {amount} | toplama izi 🟢"
     return "Zincir: Net akış yatay"
 
 
@@ -1219,6 +1232,67 @@ def _simple_total_flow_line(flow_stats: dict[str, MarketStat] | None) -> str | N
         f"Para: {direction} {_fmt_amount(net, '$')} | "
         f"Alış {_fmt_abs_amount(buy_total, '$')} / Satış {_fmt_abs_amount(sell_total, '$')}"
     )
+
+
+def _exchange_spread_emoji(spread_pct: float | None, exchange_count: int) -> str:
+    if spread_pct is None or exchange_count < 3:
+        return "🟡"
+    if spread_pct <= 0.20:
+        return "🟢"
+    if spread_pct <= 0.60:
+        return "🟡"
+    return "🔴"
+
+
+def _exchange_consensus_summary(
+    exchange_consensus: dict[str, ExchangeConsensus] | None,
+) -> str | None:
+    if not exchange_consensus:
+        return None
+
+    values = list(exchange_consensus.values())
+    total_volume = sum(
+        consensus.total_quote_volume_24h or 0.0
+        for consensus in values
+    )
+    active_counts = [consensus.exchange_count for consensus in values]
+    spreads = [
+        consensus.spread_pct
+        for consensus in values
+        if consensus.spread_pct is not None
+    ]
+    if not active_counts:
+        return None
+
+    min_count = min(active_counts)
+    max_spread = max(spreads) if spreads else None
+    emoji = _exchange_spread_emoji(max_spread, min_count)
+    if max_spread is None:
+        state = "veri sınırlı"
+    elif max_spread <= 0.20 and min_count >= 4:
+        state = "uyumlu"
+    elif max_spread <= 0.60:
+        state = "normal fark"
+    else:
+        state = "fiyat ayrışıyor"
+
+    spread_text = "?" if max_spread is None else f"{max_spread:.2f}%"
+    return (
+        f"Borsa teyidi: {min_count}+ borsa {state} {emoji} | "
+        f"spread {spread_text} | hacim {_fmt_abs_amount(total_volume, '$')}"
+    )
+
+
+def _exchange_consensus_line(consensus: ExchangeConsensus | None) -> str | None:
+    if not consensus or consensus.exchange_count < 2:
+        return None
+
+    spread = consensus.spread_pct
+    emoji = _exchange_spread_emoji(spread, consensus.exchange_count)
+    spread_text = "?" if spread is None else f"{spread:.2f}%"
+    volume = consensus.total_quote_volume_24h
+    volume_text = f" | hacim {_fmt_abs_amount(volume, '$')}" if volume else ""
+    return f"Borsa: {consensus.exchange_count} teyit | spread {spread_text} {emoji}{volume_text}"
 
 
 def _clamp(value: int, low: int = 0, high: int = 100) -> int:
@@ -2095,6 +2169,7 @@ def build_report(
     order_books: dict[str, OrderBookPressure] | None = None,
     onchain_flows: dict[str, OnChainFlow] | None = None,
     stablecoin_reserve: StablecoinReserve | None = None,
+    exchange_consensus: dict[str, ExchangeConsensus] | None = None,
     market_context: MarketContext | None = None,
 ) -> str:
     report_time = _report_time_line()
@@ -2117,6 +2192,7 @@ def build_report(
         altcoin_blocked = (btc_4h_bearish or btc_unavailable) and symbol_analysis.symbol != "BTCUSDT"
         order_book = order_books.get(symbol_analysis.symbol) if order_books else None
         onchain_flow = onchain_flows.get(symbol_analysis.symbol) if onchain_flows else None
+        exchange_view = exchange_consensus.get(symbol_analysis.symbol) if exchange_consensus else None
         alarm_lines = [
             alarm
             for item in symbol_analysis.timeframes
@@ -2240,6 +2316,7 @@ def build_report(
                 "altcoin_blocked": altcoin_blocked,
                 "order_book": order_book,
                 "onchain_flow": onchain_flow,
+                "exchange_view": exchange_view,
                 "alarm_lines": alarm_lines,
                 "confidence": confidence,
                 "rr": rr,
@@ -2270,6 +2347,10 @@ def build_report(
 
     if flow_text := _simple_total_flow_line(flow_stats):
         lines.append(flow_text)
+    if exchange_line := _exchange_consensus_summary(exchange_consensus):
+        lines.append(exchange_line)
+    if stable_line := _stablecoin_line(stablecoin_reserve):
+        lines.append(stable_line)
     if flow_summary := _flow_summary(analyses, sectors, flow_stats, confirm_stats, market_stats):
         lines.append(flow_summary)
     if rotation := _correction_rotation(analyses, sectors, flow_stats, confirm_stats):
@@ -2289,6 +2370,7 @@ def build_report(
         altcoin_blocked = bool(item["altcoin_blocked"])
         order_book = item["order_book"]
         onchain_flow = item["onchain_flow"]
+        exchange_view = item["exchange_view"]
         alarm_lines = item["alarm_lines"]
         confidence = int(item["confidence"])
         rr = item["rr"] if isinstance(item["rr"], float) or item["rr"] is None else None
@@ -2303,6 +2385,24 @@ def build_report(
             _simple_decision_line(entry_line),
             _confidence_line(confidence, rr),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
+            *(
+                [exchange_line]
+                if (
+                    exchange_line := _exchange_consensus_line(
+                        exchange_view if isinstance(exchange_view, ExchangeConsensus) else None
+                    )
+                )
+                else []
+            ),
+            *(
+                [chain_line]
+                if (
+                    chain_line := _onchain_line(
+                        onchain_flow if isinstance(onchain_flow, OnChainFlow) else None
+                    )
+                )
+                else []
+            ),
             *([str(quality_line)] if isinstance(quality_line, str) and confidence >= 45 else []),
             *([str(performance_note)] if _show_learning_note(performance_note, confidence) else []),
             *([str(optimized_note)] if _show_learning_note(optimized_note, confidence) else []),

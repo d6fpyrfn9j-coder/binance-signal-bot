@@ -27,6 +27,7 @@ class OnChainFlow:
     netflow_change_pct: float | None
     reserve: float | None
     reserve_change_pct: float | None
+    exchange: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class StablecoinReserve:
     reserve_usd: float | None
     reserve_change_pct: float | None
     reserve_usd_change_pct: float | None
+    exchange: str = "unknown"
 
 
 def _access_token() -> str:
@@ -120,9 +122,22 @@ def _metric_data(asset: str, metric: str, exchange: str, window: str, limit: int
     return _sorted_data(response)
 
 
+def _exchange_candidates(default: str = "all_exchange") -> tuple[str, ...]:
+    configured = os.getenv("CRYPTOQUANT_EXCHANGES") or os.getenv("CRYPTOQUANT_EXCHANGE")
+    if configured:
+        candidates = tuple(
+            exchange.strip()
+            for exchange in configured.split(",")
+            if exchange.strip()
+        )
+    else:
+        candidates = (default, "binance")
+    return tuple(dict.fromkeys(candidates))
+
+
 def fetch_onchain_flows(
     symbols: tuple[str, ...],
-    exchange: str = "binance",
+    exchange: str = "all_exchange",
     window: str = "hour",
     limit: int = 3,
 ) -> dict[str, OnChainFlow]:
@@ -134,50 +149,60 @@ def fetch_onchain_flows(
         asset = CRYPTOQUANT_ASSETS.get(symbol)
         if not asset:
             continue
-        try:
-            netflow_data = _metric_data(asset, "netflow", exchange, window, limit)
-            reserve_data = _metric_data(asset, "reserve", exchange, window, limit)
-            netflow, previous_netflow = _latest_and_previous(netflow_data, "netflow_total")
-            reserve, previous_reserve = _latest_and_previous(reserve_data, "reserve")
-            flows[symbol] = OnChainFlow(
-                symbol=symbol,
-                asset=asset.upper(),
-                netflow=netflow,
-                netflow_change_pct=_change_pct(netflow, previous_netflow),
-                reserve=reserve,
-                reserve_change_pct=_change_pct(reserve, previous_reserve),
-            )
-        except Exception:
-            logging.exception("Could not fetch CryptoQuant on-chain flow for %s", symbol)
+        errors: list[str] = []
+        for candidate_exchange in _exchange_candidates(exchange):
+            try:
+                netflow_data = _metric_data(asset, "netflow", candidate_exchange, window, limit)
+                reserve_data = _metric_data(asset, "reserve", candidate_exchange, window, limit)
+                netflow, previous_netflow = _latest_and_previous(netflow_data, "netflow_total")
+                reserve, previous_reserve = _latest_and_previous(reserve_data, "reserve")
+                flows[symbol] = OnChainFlow(
+                    symbol=symbol,
+                    asset=asset.upper(),
+                    netflow=netflow,
+                    netflow_change_pct=_change_pct(netflow, previous_netflow),
+                    reserve=reserve,
+                    reserve_change_pct=_change_pct(reserve, previous_reserve),
+                    exchange=candidate_exchange,
+                )
+                break
+            except Exception as exc:
+                errors.append(f"{candidate_exchange}: {exc}")
+        if symbol not in flows:
+            logging.warning("Could not fetch CryptoQuant on-chain flow for %s: %s", symbol, " | ".join(errors))
     return flows
 
 
 def fetch_stablecoin_reserve(
-    exchange: str = "binance",
+    exchange: str = "all_exchange",
     window: str = "hour",
     limit: int = 3,
 ) -> StablecoinReserve | None:
     if not cryptoquant_enabled():
         return None
 
-    try:
-        response = _read_cryptoquant(
-            "/stablecoin/exchange-flows/reserve",
-            {
-                "exchange": exchange,
-                "window": window,
-                "limit": limit,
-            },
-        )
-        data = _sorted_data(response)
-        reserve, previous_reserve = _latest_and_previous(data, "reserve")
-        reserve_usd, previous_reserve_usd = _latest_and_previous(data, "reserve_usd")
-        return StablecoinReserve(
-            reserve=reserve,
-            reserve_usd=reserve_usd,
-            reserve_change_pct=_change_pct(reserve, previous_reserve),
-            reserve_usd_change_pct=_change_pct(reserve_usd, previous_reserve_usd),
-        )
-    except Exception:
-        logging.exception("Could not fetch CryptoQuant stablecoin reserve")
-        return None
+    errors: list[str] = []
+    for candidate_exchange in _exchange_candidates(exchange):
+        try:
+            response = _read_cryptoquant(
+                "/stablecoin/exchange-flows/reserve",
+                {
+                    "exchange": candidate_exchange,
+                    "window": window,
+                    "limit": limit,
+                },
+            )
+            data = _sorted_data(response)
+            reserve, previous_reserve = _latest_and_previous(data, "reserve")
+            reserve_usd, previous_reserve_usd = _latest_and_previous(data, "reserve_usd")
+            return StablecoinReserve(
+                reserve=reserve,
+                reserve_usd=reserve_usd,
+                reserve_change_pct=_change_pct(reserve, previous_reserve),
+                reserve_usd_change_pct=_change_pct(reserve_usd, previous_reserve_usd),
+                exchange=candidate_exchange,
+            )
+        except Exception as exc:
+            errors.append(f"{candidate_exchange}: {exc}")
+    logging.warning("Could not fetch CryptoQuant stablecoin reserve: %s", " | ".join(errors))
+    return None
