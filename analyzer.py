@@ -14,7 +14,13 @@ from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pa
 from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
 from signal_weights import load_signal_weights
-from signal_tracker import SignalCandidate, SignalPerformanceProfile, load_signal_performance_profile, track_signals
+from signal_tracker import (
+    SignalCandidate,
+    SignalPerformanceProfile,
+    SignalTrackerResult,
+    load_signal_performance_profile,
+    track_signals,
+)
 
 
 MIN_ENTRY_CONFIDENCE = int(os.getenv("MIN_ENTRY_CONFIDENCE", "65"))
@@ -23,6 +29,10 @@ QUALITY_LOW_24H_VOLUME = float(os.getenv("QUALITY_LOW_24H_VOLUME", "30000000"))
 QUALITY_LOW_FLOW_VOLUME = float(os.getenv("QUALITY_LOW_FLOW_VOLUME", "75000"))
 REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "Europe/Brussels")
 REPORT_PROFILE_VERSION = os.getenv("REPORT_PROFILE_VERSION", "BTC/ETH v2")
+FUTURES_MODE_ENABLED = os.getenv("FUTURES_MODE_ENABLED", "true").lower() not in {"0", "false", "no", "off"}
+FUTURES_MIN_CONFIDENCE = int(os.getenv("FUTURES_MIN_CONFIDENCE", "72"))
+FUTURES_MIN_EDGE = int(os.getenv("FUTURES_MIN_EDGE", "8"))
+FUTURES_MIN_RR = float(os.getenv("FUTURES_MIN_RR", "1.8"))
 
 
 @dataclass(frozen=True)
@@ -60,6 +70,20 @@ class TimeframeAnalysis:
 class SymbolAnalysis:
     symbol: str
     timeframes: list[TimeframeAnalysis]
+
+
+@dataclass(frozen=True)
+class FuturesSignal:
+    side: str
+    bias: str
+    confidence: int
+    opposite_confidence: int
+    reason: str
+    entry: float | None
+    target: float | None
+    stop: float | None
+    rr: float | None
+    needs_trigger: bool = False
 
 
 def _trend_from_score(score: int) -> str:
@@ -1949,6 +1973,389 @@ def _simple_alarm_line(alarm_lines: list[str]) -> str:
     return f"Uyarı: {alarm_lines[0]} ⚠️" if alarm_lines else "Uyarı: Yok 🟢"
 
 
+def _futures_side_emoji(side: str) -> str:
+    if side == "LONG":
+        return "🟢"
+    if side == "SHORT":
+        return "🔴"
+    return "🟡"
+
+
+def _day_trade_short_target(entry: float, levels: list[float], risk_pct: float) -> float:
+    max_target = entry * (1 - risk_pct * 1.25)
+    preferred = [level for level in reversed(levels) if level < max_target]
+    if preferred:
+        return preferred[0]
+    return entry * (1 - risk_pct * 1.8)
+
+
+def _day_trade_short_stop(entry: float, resistance: float, risk_pct: float) -> float:
+    resistance_stop = resistance * 1.004
+    max_loss_stop = entry * (1 + risk_pct)
+    stop = min(resistance_stop, max_loss_stop)
+    if stop <= entry:
+        stop = max_loss_stop
+    return stop
+
+
+def _futures_setup_values(
+    symbol_analysis: SymbolAnalysis,
+    side: str,
+    side_allowed: bool,
+) -> tuple[float, float, float, float, bool] | None:
+    if side == "LONG":
+        return _trade_setup_values(symbol_analysis, side_allowed)
+
+    day_levels = _day_trade_levels(symbol_analysis)
+    if side != "SHORT" or not day_levels:
+        return None
+
+    close, support, resistance, levels = day_levels
+    risk_pct = _day_trade_risk_pct(symbol_analysis.symbol)
+    near_support = close <= support * 1.008
+
+    if side_allowed and not near_support:
+        entry_value = close
+        needs_trigger = False
+    else:
+        entry_value = support * 0.999
+        needs_trigger = True
+
+    target = _day_trade_short_target(entry_value, levels, risk_pct)
+    stop = _day_trade_short_stop(entry_value, resistance, risk_pct)
+    return entry_value, target, stop, resistance, needs_trigger
+
+
+def _futures_rr(setup: tuple[float, float, float, float, bool] | None, side: str) -> float | None:
+    if not setup:
+        return None
+    entry, target, stop, _, _ = setup
+    if entry <= 0:
+        return None
+    if side == "LONG":
+        risk = entry - stop
+        reward = target - entry
+    elif side == "SHORT":
+        risk = stop - entry
+        reward = entry - target
+    else:
+        return None
+    if risk <= 0 or reward <= 0:
+        return None
+    return reward / risk
+
+
+def _futures_direction_scores(
+    symbol_analysis: SymbolAnalysis,
+    altcoin_blocked: bool,
+    order_book: OrderBookPressure | None,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    onchain_flow: OnChainFlow | None,
+    stablecoin_reserve: StablecoinReserve | None,
+    market_context: MarketContext | None,
+) -> tuple[int, int]:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    if not item_15m or not item_1h or not item_4h:
+        return 0, 0
+
+    trend_bias = item_15m.trend_score * 2 + item_1h.trend_score * 3 + item_4h.trend_score
+    long_score = 50 + trend_bias
+    short_score = 50 - trend_bias
+
+    if altcoin_blocked:
+        long_score -= 18
+        short_score += 6
+
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    if flow_amount is not None:
+        if flow_amount >= 500_000:
+            long_score += 10
+            short_score -= 10
+        elif flow_amount >= 100_000:
+            long_score += 6
+            short_score -= 6
+        elif flow_amount <= -500_000:
+            long_score -= 12
+            short_score += 10
+        elif flow_amount <= -100_000:
+            long_score -= 8
+            short_score += 6
+
+    confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
+    if confirm:
+        if confirm.price_change_pct >= 0.3:
+            long_score += 5
+            short_score -= 5
+        elif confirm.price_change_pct <= -0.3:
+            long_score -= 5
+            short_score += 5
+
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book, onchain_flow),
+        _fake_risk_score(item_1h, order_book, onchain_flow),
+    )
+    long_score -= fake_score * 7
+    if fake_score >= 3 and item_1h.trend_score <= 1:
+        short_score += 5
+
+    if order_book:
+        ob_adjust = int(max(min(order_book.imbalance_pct / 4, 8), -8))
+        long_score += ob_adjust
+        short_score -= ob_adjust
+
+    if _onchain_sell_pressure(onchain_flow):
+        long_score -= 10
+        short_score += 8
+    elif _onchain_accumulation(onchain_flow):
+        long_score += 6
+        short_score -= 6
+
+    if _stablecoin_buy_power(stablecoin_reserve):
+        long_score += 4
+        short_score -= 4
+
+    if item_15m.rsi >= 75:
+        long_score -= 12
+        short_score += 4
+    elif item_15m.rsi <= 25:
+        long_score += 4
+        short_score -= 12
+    elif 42 <= item_15m.rsi <= 64:
+        if trend_bias >= 0:
+            long_score += 3
+        else:
+            short_score += 3
+
+    news_impact = _news_impact(market_context)
+    long_score += news_impact
+    short_score -= news_impact
+    return _clamp(long_score), _clamp(short_score)
+
+
+def _futures_signal(
+    symbol_analysis: SymbolAnalysis,
+    altcoin_blocked: bool,
+    order_book: OrderBookPressure | None,
+    flow_stats: dict[str, MarketStat] | None,
+    confirm_stats: dict[str, MarketStat] | None,
+    onchain_flow: OnChainFlow | None,
+    stablecoin_reserve: StablecoinReserve | None,
+    market_context: MarketContext | None,
+) -> FuturesSignal:
+    frames = _timeframe_map(symbol_analysis)
+    item_15m = frames.get("15m")
+    item_1h = frames.get("1h")
+    item_4h = frames.get("4h")
+    if not item_15m or not item_1h or not item_4h:
+        return FuturesSignal("BEKLE", "BEKLE", 0, 0, "veri eksik", None, None, None, None)
+
+    long_score, short_score = _futures_direction_scores(
+        symbol_analysis,
+        altcoin_blocked,
+        order_book,
+        flow_stats,
+        confirm_stats,
+        onchain_flow,
+        stablecoin_reserve,
+        market_context,
+    )
+    flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
+    flow_amount = _flow_pressure_usd(flow)
+    fake_score = max(
+        _fake_risk_score(item_15m, order_book, onchain_flow),
+        _fake_risk_score(item_1h, order_book, onchain_flow),
+    )
+    orderbook_weak = bool(order_book and order_book.imbalance_pct <= -15)
+    orderbook_strong = bool(order_book and order_book.imbalance_pct >= 15)
+    onchain_weak = _onchain_sell_pressure(onchain_flow)
+    onchain_strong = _onchain_accumulation(onchain_flow)
+    stablecoin_strong = _stablecoin_buy_power(stablecoin_reserve)
+
+    long_trend = (
+        item_4h.trend_score >= -1
+        and item_1h.trend_score >= 5
+        and item_15m.trend_score >= 2
+    ) or (
+        item_4h.trend_score >= 0
+        and item_1h.trend_score >= 3
+        and item_15m.trend_score >= 4
+    )
+    short_trend = (
+        item_4h.trend_score <= 1
+        and item_1h.trend_score <= -5
+        and item_15m.trend_score <= -2
+    ) or (
+        item_4h.trend_score <= 0
+        and item_1h.trend_score <= -3
+        and item_15m.trend_score <= -4
+    )
+
+    long_blockers: list[str] = []
+    if altcoin_blocked:
+        long_blockers.append("BTC zayıf")
+    if fake_score >= 3:
+        long_blockers.append("fake/dağıtım riski")
+    if onchain_weak and item_1h.trend_score <= 3:
+        long_blockers.append("zincir satış baskısı")
+    if item_15m.rsi >= 72 or item_1h.rsi >= 72:
+        long_blockers.append("RSI yüksek")
+    if item_15m.taker_delta_pct <= -10 and item_1h.trend_score <= 1:
+        long_blockers.append("satıcı baskısı")
+    if flow_amount is not None and flow_amount <= -50_000:
+        long_blockers.append("para çıkışı")
+    if orderbook_weak:
+        long_blockers.append("satış duvarı")
+
+    short_blockers: list[str] = []
+    if item_15m.rsi <= 28 or item_1h.rsi <= 28:
+        short_blockers.append("RSI çok düşük")
+    if onchain_strong and item_1h.trend_score >= -3:
+        short_blockers.append("zincir birikim")
+    if stablecoin_strong and item_1h.trend_score >= -3:
+        short_blockers.append("stablecoin alım gücü")
+    if item_15m.taker_delta_pct >= 10 and item_1h.trend_score >= -1:
+        short_blockers.append("alıcı baskısı")
+    if flow_amount is not None and flow_amount >= 50_000:
+        short_blockers.append("para girişi")
+    if orderbook_strong:
+        short_blockers.append("alış duvarı")
+
+    long_ready = (
+        long_score >= FUTURES_MIN_CONFIDENCE
+        and long_score >= short_score + FUTURES_MIN_EDGE
+        and long_trend
+        and not long_blockers
+    )
+    short_ready = (
+        short_score >= FUTURES_MIN_CONFIDENCE
+        and short_score >= long_score + FUTURES_MIN_EDGE
+        and short_trend
+        and not short_blockers
+    )
+
+    if long_ready and (not short_ready or long_score >= short_score):
+        side = "LONG"
+        confidence = long_score
+        opposite = short_score
+        reason = "trend ve akış yukarı"
+    elif short_ready:
+        side = "SHORT"
+        confidence = short_score
+        opposite = long_score
+        reason = "trend ve akış aşağı"
+    else:
+        if long_score >= short_score + FUTURES_MIN_EDGE:
+            bias = "LONG"
+            blockers = long_blockers
+            reason = ", ".join(blockers[:2]) if blockers else "LONG teyidi zayıf"
+            confidence = long_score
+            opposite = short_score
+        elif short_score >= long_score + FUTURES_MIN_EDGE:
+            bias = "SHORT"
+            blockers = short_blockers
+            reason = ", ".join(blockers[:2]) if blockers else "SHORT teyidi zayıf"
+            confidence = short_score
+            opposite = long_score
+        else:
+            bias = "BEKLE"
+            reason = "net yön yok"
+            confidence = max(long_score, short_score)
+            opposite = min(long_score, short_score)
+        return FuturesSignal("BEKLE", bias, confidence, opposite, reason, None, None, None, None)
+
+    setup = _futures_setup_values(symbol_analysis, side, True)
+    rr = _futures_rr(setup, side)
+    if rr is None or rr < FUTURES_MIN_RR:
+        return FuturesSignal(
+            "BEKLE",
+            side,
+            confidence,
+            opposite,
+            "R/R düşük",
+            None,
+            None,
+            None,
+            rr,
+        )
+
+    entry, target, stop, _, needs_trigger = setup
+    return FuturesSignal(
+        side,
+        side,
+        confidence,
+        opposite,
+        reason,
+        entry,
+        target,
+        stop,
+        rr,
+        needs_trigger,
+    )
+
+
+def _futures_decision_line(signal: FuturesSignal) -> str:
+    direction = signal.side if signal.side in {"LONG", "SHORT"} else signal.bias
+    direction = direction if direction in {"LONG", "SHORT"} else "NÖTR"
+    direction_emoji = _futures_side_emoji(direction)
+
+    if signal.side == "BEKLE":
+        return (
+            f"Futures Yön: {direction} {direction_emoji} | İşlem: BEKLE 🟡 | "
+            f"Güven {signal.confidence}/100 {_score_emoji(signal.confidence)} | {signal.reason}"
+        )
+
+    trigger_text = " | tetik bekle" if signal.needs_trigger else ""
+    return (
+        f"Futures Yön: {signal.side} {direction_emoji} | İşlem: AÇ {signal.side} | "
+        f"Güven {signal.confidence}/100 "
+        f"{_score_emoji(signal.confidence)} | {signal.reason}{trigger_text}"
+    )
+
+
+def _futures_plan_line(signal: FuturesSignal) -> str | None:
+    if signal.side not in {"LONG", "SHORT"} or signal.entry is None or signal.target is None or signal.stop is None:
+        return None
+    rr_text = "?" if signal.rr is None else f"1:{signal.rr:.1f}"
+    entry_label = "Tetik" if signal.needs_trigger else "Giriş"
+    return (
+        f"Futures Plan: {entry_label} {_fmt_price(signal.entry)} | "
+        f"Hedef {_fmt_price(signal.target)} | Stop {_fmt_price(signal.stop)} | R/R {rr_text}"
+    )
+
+
+def _futures_market_mode_line(prepared: list[dict[str, object]]) -> str:
+    signals = [
+        signal
+        for item in prepared
+        if isinstance((signal := item.get("futures_signal")), FuturesSignal)
+    ]
+    if not signals:
+        return "PİYASA MODU: BEKLE 🟡 | Güven 0/100 🔴"
+
+    active = [signal for signal in signals if signal.side in {"LONG", "SHORT"}]
+    if active:
+        strongest = max(active, key=lambda signal: signal.confidence)
+        active_same_side = sum(1 for signal in active if signal.side == strongest.side)
+        suffix = f" | aktif {active_same_side}" if len(signals) > 1 else ""
+        return (
+            f"PİYASA MODU: {strongest.side} AĞIRLIKLI {_futures_side_emoji(strongest.side)} | "
+            f"Güven {strongest.confidence}/100 {_score_emoji(strongest.confidence)}{suffix}"
+        )
+
+    strongest = max(signals, key=lambda signal: signal.confidence)
+    if strongest.bias in {"LONG", "SHORT"}:
+        return (
+            f"PİYASA MODU: BEKLE 🟡 | eğilim {strongest.bias} | "
+            f"Güven {strongest.confidence}/100 {_score_emoji(strongest.confidence)}"
+        )
+    return f"PİYASA MODU: BEKLE 🟡 | Güven {strongest.confidence}/100 {_score_emoji(strongest.confidence)}"
+
+
 def _btc_4h_bearish(analyses: list[SymbolAnalysis]) -> bool:
     for symbol_analysis in analyses:
         if symbol_analysis.symbol != "BTCUSDT":
@@ -2183,6 +2590,7 @@ def build_report(
     optimized_weights = load_signal_weights()
     min_entry_confidence = optimized_weights.min_entry_confidence or MIN_ENTRY_CONFIDENCE
     min_entry_rr = optimized_weights.min_entry_rr or MIN_ENTRY_RR
+    futures_mode = FUTURES_MODE_ENABLED
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
@@ -2286,9 +2694,24 @@ def build_report(
                 confidence = _clamp(confidence + quality_adjust + performance_adjust + optimized_adjust)
         confidence_scores.append(confidence)
 
+        futures_signal = (
+            _futures_signal(
+                symbol_analysis,
+                altcoin_blocked,
+                order_book,
+                flow_stats,
+                confirm_stats,
+                onchain_flow,
+                stablecoin_reserve,
+                market_context,
+            )
+            if futures_mode
+            else None
+        )
+
         frames = _timeframe_map(symbol_analysis)
         item_15m = frames.get("15m")
-        if setup and item_15m:
+        if not futures_mode and setup and item_15m:
             entry, target, stop, _, needs_trigger = setup
             candidates.append(
                 SignalCandidate(
@@ -2321,20 +2744,34 @@ def build_report(
                 "confidence": confidence,
                 "rr": rr,
                 "setup": setup,
+                "futures_signal": futures_signal,
                 "quality_line": quality_line,
                 "performance_note": performance_note,
                 "optimized_note": optimized_note,
             }
         )
 
-    signal_result = track_signals(candidates)
+    signal_result = (
+        SignalTrackerResult(
+            summary_line="Futures sinyal takibi: ayrı short/long takip yok",
+            audit_line="Hata testi: futures modunda kapalı",
+            symbol_lines={},
+        )
+        if futures_mode
+        else track_signals(candidates)
+    )
     profile = "/".join(analysis.symbol.replace("USDT", "") for analysis in analyses)
     lines = [
         "KRIPTO RAPORU",
         report_time,
         f"Profil: {profile}",
         f"Sürüm: {REPORT_PROFILE_VERSION}",
-        _market_mode_line(crash_text, btc_4h_bearish, btc_unavailable, confidence_scores, market_context),
+        *(["Hesap: FUTURES | yön modu LONG/SHORT/BEKLE"] if futures_mode else []),
+        (
+            _futures_market_mode_line(prepared)
+            if futures_mode
+            else _market_mode_line(crash_text, btc_4h_bearish, btc_unavailable, confidence_scores, market_context)
+        ),
         signal_result.summary_line,
         signal_result.audit_line,
     ]
@@ -2375,15 +2812,22 @@ def build_report(
         confidence = int(item["confidence"])
         rr = item["rr"] if isinstance(item["rr"], float) or item["rr"] is None else None
         setup = item["setup"]
+        futures_signal = item["futures_signal"]
         quality_line = item["quality_line"]
         performance_note = item["performance_note"]
         optimized_note = item["optimized_note"]
+        futures_plan = _futures_plan_line(futures_signal) if isinstance(futures_signal, FuturesSignal) else None
 
         lines.extend([
             "",
             f"{symbol_analysis.symbol} | Fiyat: {_fmt_price(display_close)}",
-            _simple_decision_line(entry_line),
-            _confidence_line(confidence, rr),
+            *(
+                [_futures_decision_line(futures_signal)]
+                if isinstance(futures_signal, FuturesSignal)
+                else [_simple_decision_line(entry_line)]
+            ),
+            *([futures_plan] if futures_plan else []),
+            *([] if futures_mode else [_confidence_line(confidence, rr)]),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
             *(
                 [exchange_line]
@@ -2403,19 +2847,20 @@ def build_report(
                 )
                 else []
             ),
-            *([str(quality_line)] if isinstance(quality_line, str) and confidence >= 45 else []),
-            *([str(performance_note)] if _show_learning_note(performance_note, confidence) else []),
-            *([str(optimized_note)] if _show_learning_note(optimized_note, confidence) else []),
+            *([str(quality_line)] if not futures_mode and isinstance(quality_line, str) and confidence >= 45 else []),
+            *([str(performance_note)] if not futures_mode and _show_learning_note(performance_note, confidence) else []),
+            *([str(optimized_note)] if not futures_mode and _show_learning_note(optimized_note, confidence) else []),
             *([big_order] if (big_order := _big_order_line(order_book if isinstance(order_book, OrderBookPressure) else None)) else []),
             *(
                 [guard_line]
                 if (
-                    guard_line := _profit_guard_line(
+                    not futures_mode
+                    and (guard_line := _profit_guard_line(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
                         order_book if isinstance(order_book, OrderBookPressure) else None,
-                    )
+                    ))
                 )
                 else []
             ),
@@ -2433,69 +2878,77 @@ def build_report(
             *(
                 [dip_reversal]
                 if (
-                    dip_reversal := _dip_reversal_line(
+                    not futures_mode
+                    and (dip_reversal := _dip_reversal_line(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
                         order_book if isinstance(order_book, OrderBookPressure) else None,
                         altcoin_blocked,
-                    )
+                    ))
                 )
                 else []
             ),
             *(
                 [rocket]
                 if (
-                    rocket := _rocket_line(
+                    not futures_mode
+                    and (rocket := _rocket_line(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
                         order_book if isinstance(order_book, OrderBookPressure) else None,
                         entry_allowed,
                         altcoin_blocked,
-                    )
+                    ))
                 )
                 else []
             ),
             *(
                 [strong_rise]
                 if (
-                    strong_rise := _strong_rise_alert_line(
+                    not futures_mode
+                    and (strong_rise := _strong_rise_alert_line(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
                         order_book if isinstance(order_book, OrderBookPressure) else None,
                         entry_allowed,
                         altcoin_blocked,
-                    )
+                    ))
                 )
                 else []
             ),
             *(
                 [rise]
                 if (
-                    rise := _rise_signal(
+                    not futures_mode
+                    and (rise := _rise_signal(
                         symbol_analysis,
                         flow_stats,
                         confirm_stats,
                         altcoin_blocked,
-                    )
+                    ))
                 )
                 else []
             ),
-            *_simple_trade_lines(symbol_analysis, entry_allowed, entry_line),
+            *([] if futures_mode else _simple_trade_lines(symbol_analysis, entry_allowed, entry_line)),
             *(
                 [real_check]
                 if (
+                    not futures_mode
+                    and
                     not _is_no_trade_entry(entry_line)
                     and (real_check := _real_trade_check_line(symbol_analysis, entry_allowed))
                 )
                 else []
             ),
-            *([test_line] if (test_line := signal_result.symbol_lines.get(symbol_analysis.symbol)) else []),
+            *([] if futures_mode else ([test_line] if (test_line := signal_result.symbol_lines.get(symbol_analysis.symbol)) else [])),
             *(
                 [protection]
                 if (
+                    not futures_mode
+                    and
                     entry_allowed
                     and (protection := _protection_line(
                         setup if isinstance(setup, tuple) else None,

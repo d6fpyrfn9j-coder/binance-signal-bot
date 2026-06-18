@@ -11,6 +11,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - RSI, EMA 20/50/200, MACD, Bollinger, momentum ve hacim degisimini hesaplar.
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
+- Futures modu acikken Telegram'da `Futures: LONG`, `Futures: SHORT` veya `Futures: BEKLE` yazar; guven, tetik, hedef, stop ve R/R seviyesini ayri verir.
 - Gunluk trade icin yakin seviyelerden `Giriş`, `Tetik`, `Hedef`, `Stop` ve `R/R` hesaplar.
 - Piyasa modu, guven puani, BTC dominance, haber filtresi, fake pump, balina akisi ve sinyal basari testini kisa yazar.
 - `R/R` rengi guven puanina baglidir; guven kirmiziyken R/R yesil yanmaz.
@@ -27,7 +28,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Borsaya net coin girisi satis riski, borsadan net coin cikisi toplama/soguk cuzdan izi olarak yorumlanir.
 - Ucretsiz haber filtresi ETF, FED, hack ve dava basliklarini tarar; ciddi haber riski varsa AL sinyalini dusurur.
 - `signal_history.json` icinde AL sinyallerini saklar; 1 saat / 4 saat performansi ve son 100 sinyal basari oranini takip eder.
-- Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir.
+- Spot hesap icin long/short dili kullanmadan momentum ve risk ozeti verir; futures modu icin long/short yonu uretir.
 - BTC ana trendi zayifsa altcoinlerde giris otomatik kapatilir.
 - BTC zayiflama, anlik para cikisi ve hacimli satis birlesirse `Cokus erken uyari` verir.
 - Duzeltme geldiginde para USDT'de mi bekliyor, sektor icinde mi donuyor, baska projeye mi kayiyor ayirmaya calisir.
@@ -120,6 +121,10 @@ QUALITY_LOW_24H_VOLUME=30000000
 QUALITY_LOW_FLOW_VOLUME=75000
 SIGNAL_WEIGHTS_ENABLED=true
 SIGNAL_WEIGHTS_FILE=signal_weights.json
+FUTURES_MODE_ENABLED=true
+FUTURES_MIN_CONFIDENCE=72
+FUTURES_MIN_EDGE=8
+FUTURES_MIN_RR=1.8
 ```
 
 Chat ID bilmiyorsan:
