@@ -8,13 +8,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/eminaliyev/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3</string>
-    <string>/Users/eminaliyev/Documents/bot binance/main.py</string>
-    <string>--once</string>
+    <string>/Users/eminaliyev/Library/Application Support/binance-signal-bot/launch_bot.sh</string>
   </array>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/eminaliyev/Documents/bot binance</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -23,10 +18,9 @@
   <integer>300</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/eminaliyev/Documents/bot binance/launchd.out.log</string>
+  <string>/Users/eminaliyev/Library/Logs/binance-signal-bot/launchd.out.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/eminaliyev/Documents/bot binance/launchd.err.log</string>
+  <string>/Users/eminaliyev/Library/Logs/binance-signal-bot/launchd.err.log</string>
 </dict>
 </plist>
-
