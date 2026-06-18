@@ -19,6 +19,18 @@ services:
         value: "true"
       - key: REPORT_TIMEZONE
         value: "Europe/Brussels"
+      - key: FUTURES_MODE_ENABLED
+        value: "true"
+      - key: FUTURES_MIN_CONFIDENCE
+        value: "72"
+      - key: FUTURES_MIN_EDGE
+        value: "8"
+      - key: FUTURES_MIN_RR
+        value: "1.8"
+      - key: FUTURES_TRACKING_ENABLED
+        value: "true"
+      - key: FUTURES_SIGNAL_HISTORY_FILE
+        value: "futures_signal_history.json"
       - key: CORE_SYMBOLS
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES
@@ -52,6 +64,18 @@ services:
         value: "Europe/Brussels"
       - key: REPORT_PROFILE_VERSION
         value: "BTC/ETH v2"
+      - key: FUTURES_MODE_ENABLED
+        value: "true"
+      - key: FUTURES_MIN_CONFIDENCE
+        value: "72"
+      - key: FUTURES_MIN_EDGE
+        value: "8"
+      - key: FUTURES_MIN_RR
+        value: "1.8"
+      - key: FUTURES_TRACKING_ENABLED
+        value: "true"
+      - key: FUTURES_SIGNAL_HISTORY_FILE
+        value: "futures_signal_history.json"
       - key: CORE_SYMBOLS
         value: "BTCUSDT,ETHUSDT"
       - key: ALT_CANDIDATES

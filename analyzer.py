@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
 from exchange_fetcher import ExchangeConsensus
+from futures_tracker import FuturesSignalCandidate, track_futures_signals
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 from macro_fetcher import MarketContext
 from onchain_fetcher import OnChainFlow, StablecoinReserve
@@ -17,7 +18,6 @@ from signal_weights import load_signal_weights
 from signal_tracker import (
     SignalCandidate,
     SignalPerformanceProfile,
-    SignalTrackerResult,
     load_signal_performance_profile,
     track_signals,
 )
@@ -2266,21 +2266,28 @@ def _futures_signal(
             reason = "net yön yok"
             confidence = max(long_score, short_score)
             opposite = min(long_score, short_score)
-        return FuturesSignal("BEKLE", bias, confidence, opposite, reason, None, None, None, None)
+        setup = _futures_setup_values(symbol_analysis, bias, False) if bias in {"LONG", "SHORT"} else None
+        rr = _futures_rr(setup, bias) if setup else None
+        if setup:
+            entry, target, stop, _, needs_trigger = setup
+            return FuturesSignal("BEKLE", bias, confidence, opposite, reason, entry, target, stop, rr, needs_trigger)
+        return FuturesSignal("BEKLE", bias, confidence, opposite, reason, None, None, None, rr)
 
     setup = _futures_setup_values(symbol_analysis, side, True)
     rr = _futures_rr(setup, side)
     if rr is None or rr < FUTURES_MIN_RR:
+        entry, target, stop, _, needs_trigger = setup if setup else (None, None, None, None, False)
         return FuturesSignal(
             "BEKLE",
             side,
             confidence,
             opposite,
             "R/R düşük",
-            None,
-            None,
-            None,
+            entry,
+            target,
+            stop,
             rr,
+            needs_trigger,
         )
 
     entry, target, stop, _, needs_trigger = setup
@@ -2584,6 +2591,7 @@ def build_report(
     crash_text = _crash_warning(analyses, flow_stats, confirm_stats)
     prepared: list[dict[str, object]] = []
     candidates: list[SignalCandidate] = []
+    futures_candidates: list[FuturesSignalCandidate] = []
     confidence_scores: list[int] = []
     news_impact = _news_impact(market_context)
     performance_profile = load_signal_performance_profile()
@@ -2711,6 +2719,22 @@ def build_report(
 
         frames = _timeframe_map(symbol_analysis)
         item_15m = frames.get("15m")
+        if futures_signal and futures_signal.entry and futures_signal.target and futures_signal.stop:
+            futures_candidates.append(
+                FuturesSignalCandidate(
+                    symbol=symbol_analysis.symbol,
+                    side=futures_signal.side,
+                    bias=futures_signal.bias,
+                    entry=futures_signal.entry,
+                    target=futures_signal.target,
+                    stop=futures_signal.stop,
+                    current_price=display_close,
+                    confidence=futures_signal.confidence,
+                    rr=futures_signal.rr or 0.0,
+                    decision=_futures_decision_line(futures_signal),
+                    needs_trigger=futures_signal.needs_trigger,
+                )
+            )
         if not futures_mode and setup and item_15m:
             entry, target, stop, _, needs_trigger = setup
             candidates.append(
@@ -2751,15 +2775,7 @@ def build_report(
             }
         )
 
-    signal_result = (
-        SignalTrackerResult(
-            summary_line="Futures sinyal takibi: ayrı short/long takip yok",
-            audit_line="Hata testi: futures modunda kapalı",
-            symbol_lines={},
-        )
-        if futures_mode
-        else track_signals(candidates)
-    )
+    signal_result = track_futures_signals(futures_candidates) if futures_mode else track_signals(candidates)
     profile = "/".join(analysis.symbol.replace("USDT", "") for analysis in analyses)
     lines = [
         "KRIPTO RAPORU",
@@ -2943,7 +2959,7 @@ def build_report(
                 )
                 else []
             ),
-            *([] if futures_mode else ([test_line] if (test_line := signal_result.symbol_lines.get(symbol_analysis.symbol)) else [])),
+            *([test_line] if (test_line := signal_result.symbol_lines.get(symbol_analysis.symbol)) else []),
             *(
                 [protection]
                 if (

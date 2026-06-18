@@ -36,6 +36,8 @@ jobs:
           FUTURES_MIN_CONFIDENCE: "72"
           FUTURES_MIN_EDGE: "8"
           FUTURES_MIN_RR: "1.8"
+          FUTURES_TRACKING_ENABLED: "true"
+          FUTURES_SIGNAL_HISTORY_FILE: futures_signal_history.json
           MULTI_EXCHANGE_ENABLED: "true"
           MULTI_EXCHANGE_LIST: binance,coinbase,kraken,okx,bybit,kucoin,mexc
           CRYPTOQUANT_EXCHANGES: all_exchange,binance

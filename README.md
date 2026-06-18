@@ -12,6 +12,7 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
 - Futures modu acikken Telegram'da `Futures: LONG`, `Futures: SHORT` veya `Futures: BEKLE` yazar; guven, tetik, hedef, stop ve R/R seviyesini ayri verir.
+- Futures sinyallerini `futures_signal_history.json` icinde ayri takip eder; son 100 futures sonucu, kacan firsat, fake tetik, korunan zarar ve stop sayisini rapora yazar.
 - Gunluk trade icin yakin seviyelerden `Giriş`, `Tetik`, `Hedef`, `Stop` ve `R/R` hesaplar.
 - Piyasa modu, guven puani, BTC dominance, haber filtresi, fake pump, balina akisi ve sinyal basari testini kisa yazar.
 - `R/R` rengi guven puanina baglidir; guven kirmiziyken R/R yesil yanmaz.
@@ -125,6 +126,8 @@ FUTURES_MODE_ENABLED=true
 FUTURES_MIN_CONFIDENCE=72
 FUTURES_MIN_EDGE=8
 FUTURES_MIN_RR=1.8
+FUTURES_TRACKING_ENABLED=true
+FUTURES_SIGNAL_HISTORY_FILE=futures_signal_history.json
 ```
 
 Chat ID bilmiyorsan:
@@ -323,4 +326,5 @@ Uyarı: Yok 🟢
 - Zincir satiri kesin niyet okumaz; borsaya giris satis riski, borsadan cikis toplama ihtimali olarak yorumlanir.
 - Haber filtresi ucretsiz RSS basliklarindan risk etiketi uretir; kesin ETF dolar akisi icin ayrica profesyonel veri API'si gerekir.
 - Render dosya sistemi servis yeniden deploy olunca sifirlanabilir; uzun vadeli sinyal istatistigi icin sonraki adim kalici veritabani eklemektir.
+- Futures performans takibi worker calisirken `futures_signal_history.json` icinde birikir; GitHub Actions tek seferlik ortamda calistigi icin bu hafiza kalici olmayabilir.
 - `market_bot.py` onceki kisa piyasa yonu ve piyasa akisi yardimci aracidir; yeni moduler botun ana girisi `main.py` dosyasidir.
