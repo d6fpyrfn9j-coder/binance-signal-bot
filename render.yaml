@@ -5,7 +5,7 @@ services:
     region: frankfurt
     schedule: "*/5 * * * *"
     buildCommand: "true"
-    startCommand: "python -c \"print('cron disabled; worker sends Telegram reports')\""
+    startCommand: "python main.py --once --pre-scan-seconds 180"
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
