@@ -5,7 +5,7 @@ services:
     region: frankfurt
     schedule: "*/5 * * * *"
     buildCommand: "true"
-    startCommand: "python main.py --once --pre-scan-seconds 180"
+    startCommand: "python main.py --once --pre-scan-seconds 0"
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
