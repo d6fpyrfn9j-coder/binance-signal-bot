@@ -29,7 +29,7 @@ def load_env(path: str = ".env") -> None:
 
 load_env()
 
-from analyzer import analyze_symbol, build_report
+from analyzer import FUTURES_MODE_ENABLED, analyze_symbol, build_report
 from data_fetcher import (
     MarketStat,
     OrderBookPressure,
@@ -40,6 +40,7 @@ from data_fetcher import (
     fetch_recent_trade_flow,
 )
 from exchange_fetcher import ExchangeConsensus, fetch_exchange_consensus
+from futures_flow import FuturesFlowSnapshot, fetch_futures_flow
 from macro_fetcher import MarketContext, fetch_market_context
 from onchain_fetcher import OnChainFlow, StablecoinReserve, fetch_onchain_flows, fetch_stablecoin_reserve
 from telegram_sender import send_telegram_message
@@ -100,6 +101,7 @@ ALT_CANDIDATES = (
 )
 ALL_SYMBOLS = tuple(dict.fromkeys(CORE_SYMBOLS + ALT_CANDIDATES))
 TIMEFRAMES = ("15m", "1h", "4h")
+BTC_REGIME_TIMEFRAMES = ("1d",)
 MAX_REPORT_SYMBOLS = int(os.getenv("MAX_REPORT_SYMBOLS", str(len(ALL_SYMBOLS) or 2)))
 MAX_ALT_SYMBOLS = max(0, min(MAX_REPORT_SYMBOLS - len(CORE_SYMBOLS), len(ALT_CANDIDATES)))
 MIN_ALT_QUOTE_VOLUME = float(os.getenv("MIN_ALT_QUOTE_VOLUME", "20000000"))
@@ -255,6 +257,7 @@ def create_report(scan: MarketScan | None = None) -> str:
                     btc_unavailable = True
     if not analyses:
         raise RuntimeError("Hicbir sembol icin rapor olusturulamadi")
+    futures_flows = load_futures_flows(analyses) if FUTURES_MODE_ENABLED else {}
     return build_report(
         analyses,
         costs=load_costs(),
@@ -268,6 +271,7 @@ def create_report(scan: MarketScan | None = None) -> str:
         stablecoin_reserve=stablecoin_reserve,
         exchange_consensus=exchange_consensus,
         market_context=market_context,
+        futures_flows=futures_flows,
     )
 
 
@@ -280,9 +284,10 @@ def load_market_stats() -> dict[str, MarketStat]:
 
 
 def load_symbol_analysis(symbol: str):
+    timeframes = TIMEFRAMES + (BTC_REGIME_TIMEFRAMES if symbol == "BTCUSDT" else ())
     candles_by_timeframe = {
         timeframe: fetch_binance_klines(symbol, timeframe, limit=250)
-        for timeframe in TIMEFRAMES
+        for timeframe in timeframes
     }
     return analyze_symbol(symbol, candles_by_timeframe)
 
@@ -309,6 +314,29 @@ def load_order_books(symbols: tuple[str, ...]) -> dict[str, OrderBookPressure]:
     except Exception:
         logging.exception("Could not fetch order book pressure")
         return {}
+
+
+def load_futures_flows(analyses) -> dict[str, FuturesFlowSnapshot]:
+    def fetch_one(symbol_analysis):
+        frames = {item.timeframe: item for item in symbol_analysis.timeframes}
+        item_15m = frames.get("15m")
+        price_change_pct = item_15m.change_pct if item_15m else 0.0
+        volume_momentum_pct = item_15m.volume_change_pct if item_15m else 0.0
+        return fetch_futures_flow(
+            symbol_analysis.symbol,
+            price_change_pct=price_change_pct,
+            volume_momentum_pct=volume_momentum_pct,
+        )
+
+    flows: dict[str, FuturesFlowSnapshot] = {}
+    with ThreadPoolExecutor(max_workers=min(max(len(analyses), 1), 6)) as executor:
+        futures = {executor.submit(fetch_one, analysis): analysis.symbol for analysis in analyses}
+        for future, symbol in futures.items():
+            try:
+                flows[symbol] = future.result()
+            except Exception:
+                logging.exception("Could not fetch futures flow for %s", symbol)
+    return flows
 
 
 def scan_market(symbols: tuple[str, ...], duration_seconds: int, scan_interval: float) -> MarketScan | None:

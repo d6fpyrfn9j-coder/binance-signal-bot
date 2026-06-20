@@ -12,6 +12,8 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - Trend yonunu EMA dizilimi, EMA egimi, MACD ivmesi, hacim ve swing yapisina gore skorlayarak yorumlar.
 - Zaman dilimlerini icerde analiz eder; Telegram'da `Giriş: EVET`, `Giriş: HAYIR` veya `Giriş: BEKLE` yazar.
 - Futures modu acikken Telegram'da `Futures: LONG`, `Futures: SHORT` veya `Futures: BEKLE` yazar; guven, tetik, hedef, stop ve R/R seviyesini ayri verir.
+- Futures smart money analizi Binance Futures open interest, funding, global/top trader long-short oranlari ve hacim momentumuyla LONG/SHORT akilli para bias'i uretir.
+- Adaptive optimizer tamamlanmis backtest ve sinyal gecmisinden RSI, EMA, MACD, hacim, rejim, OI, funding, long/short ve order-book agirliklarini rejime gore ayarlar.
 - Futures sinyallerini `futures_signal_history.json` icinde ayri takip eder; son 100 futures sonucu, kacan firsat, fake tetik, korunan zarar ve stop sayisini rapora yazar.
 - Gunluk trade icin yakin seviyelerden `Giriş`, `Tetik`, `Hedef`, `Stop` ve `R/R` hesaplar.
 - Piyasa modu, guven puani, BTC dominance, haber filtresi, fake pump, balina akisi ve sinyal basari testini kisa yazar.
@@ -57,6 +59,8 @@ Bu bot otomatik islem yapmaz. BTC ve secili altcoin sepeti icin piyasa verilerin
 - `data_fetcher.py`: Binance mum verilerini ceker.
 - `indicators.py`: RSI, EMA, MACD ve ortalama hesaplari.
 - `analyzer.py`: Trend, destek/direnc ve risk uyarilari.
+- `futures_flow.py`: Futures open interest, funding ve long/short kalabalikligini skorlar.
+- `optimizer.py`: Tamamlanmis backtest ve signal history uzerinden `optimized_weights.json` uretir.
 - `telegram_sender.py`: Telegram mesaj gonderimi.
 - `websocket_worker.py`: Binance WebSocket akisini surekli izleyen worker.
 - `backtester.py`: Gecmis Binance mumlariyla backtest ve otomatik agirlik optimizasyonu.
@@ -122,10 +126,23 @@ QUALITY_LOW_24H_VOLUME=30000000
 QUALITY_LOW_FLOW_VOLUME=75000
 SIGNAL_WEIGHTS_ENABLED=true
 SIGNAL_WEIGHTS_FILE=signal_weights.json
+OPTIMIZED_WEIGHTS_ENABLED=true
+OPTIMIZED_WEIGHTS_FILE=optimized_weights.json
 FUTURES_MODE_ENABLED=true
 FUTURES_MIN_CONFIDENCE=72
 FUTURES_MIN_EDGE=8
 FUTURES_MIN_RR=1.8
+FUTURES_ACCOUNT_BALANCE=500
+FUTURES_MAX_RISK_PCT=2
+FUTURES_MAX_LEVERAGE=5
+FUTURES_MAX_STOP_LOSS_PCT=5
+FUTURES_MAX_DAILY_LOSS_PCT=5
+FUTURES_MAX_DAILY_LOSING_TRADES=3
+FUTURES_TODAY_LOSS_PCT=0
+FUTURES_TODAY_LOSING_TRADES=0
+FUTURES_FLOW_PERIOD=15m
+FUTURES_FLOW_LIMIT=24
+BINANCE_FUTURES_BASE_URL=https://fapi.binance.com
 FUTURES_TRACKING_ENABLED=true
 FUTURES_SIGNAL_HISTORY_FILE=futures_signal_history.json
 ```
@@ -155,18 +172,34 @@ Telegram'a gondermeden sadece terminalde gormek icin:
 python3 main.py --once --no-telegram
 ```
 
-Backtest ve otomatik optimizasyon icin:
+Profesyonel futures backtest icin:
 
 ```bash
-python3 backtester.py --days 30 --sample-every 8
+python3 backtester.py --symbols BTCUSDT ETHUSDT --periods last_180_days --sample-every 8
 ```
 
 Bu komut:
 
 - `backtest_results.json` icine detayli gecmis test sonucunu yazar.
-- `signal_weights.json` icine botun kullanacagi optimize guven/RR ve coin agirliklarini yazar.
+- Futures flow gecmis verisi Binance tarafinda varsa event kayitlarina OI, funding, long/short, crowding ve smart money bias alanlarini ekler.
 
-GitHub Actions icindeki `Backtest Optimize` workflow'u her gun otomatik calisir ve `signal_weights.json` degisirse repo'ya commit eder.
+Legacy spot otomatik optimizasyon icin:
+
+```bash
+python3 backtester.py --legacy-spot --days 30 --sample-every 8
+```
+
+Bu komut `signal_weights.json` icine botun kullanacagi optimize guven/RR ve coin agirliklarini yazar.
+
+Adaptive component optimizer icin:
+
+```bash
+python3 optimizer.py
+```
+
+Bu komut `optimized_weights.json` uretir. Bot bu dosyayi okur; her component agirligi sifira dusmez ve tek optimizasyon kosusunda en fazla %20 degisir.
+
+GitHub Actions icindeki `Backtest Optimize` workflow'u her gun otomatik calisir; `signal_weights.json` ve `optimized_weights.json` degisirse repo'ya commit eder.
 
 4. 5 dakikada bir calistir.
 

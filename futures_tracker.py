@@ -33,6 +33,7 @@ class FuturesSignalCandidate:
     rr: float
     decision: str
     needs_trigger: bool
+    risk_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -328,6 +329,7 @@ def _new_record(candidate: FuturesSignalCandidate, now: dt.datetime) -> dict[str
         "stop": candidate.stop,
         "confidence": candidate.confidence,
         "rr": candidate.rr,
+        "risk_pct": candidate.risk_pct,
         "status": "open",
         "needs_trigger": candidate.needs_trigger,
         "triggered": action == "TRADE" and not candidate.needs_trigger,
@@ -391,6 +393,27 @@ def _audit_line(records: list[dict[str, Any]]) -> str:
     if not any((missed, fake, protected, failed)):
         return "Futures hata testi: veri birikiyor 🟡"
     return f"Futures hata testi: kaçan {missed} | fake {fake} | korunan {protected} | stop {failed}"
+
+
+def daily_futures_risk_state(now: dt.datetime | None = None) -> tuple[float, int]:
+    now = now or _now_utc()
+    today = now.date()
+    loss_pct = 0.0
+    losing_trades = 0
+
+    for record in _load_records(_history_path()):
+        if record.get("action") != "TRADE" or record.get("status") != "failed":
+            continue
+        closed_at = _parse_time(str(record.get("closed_at") or record.get("created_at") or ""))
+        if not closed_at or closed_at.date() != today:
+            continue
+        losing_trades += 1
+        try:
+            loss_pct += float(record.get("risk_pct") or 2.0)
+        except (TypeError, ValueError):
+            loss_pct += 2.0
+
+    return loss_pct, losing_trades
 
 
 def track_futures_signals(candidates: list[FuturesSignalCandidate]) -> FuturesTrackerResult:

@@ -29,16 +29,20 @@ jobs:
       - name: Run historical backtest
         run: >
           python backtester.py
+          --legacy-spot
           --days 30
           --sample-every 8
           --symbols BTCUSDT ETHUSDT SOLUSDT BNBUSDT XRPUSDT SUIUSDT NEARUSDT ONDOUSDT LINKUSDT FETUSDT
           --output backtest_results.json
           --weights-output signal_weights.json
 
+      - name: Run adaptive component optimizer
+        run: python optimizer.py
+
       - name: Commit optimized weights
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add signal_weights.json
+          git add signal_weights.json optimized_weights.json
           git diff --cached --quiet || git commit -m "Update optimized signal weights"
           git push

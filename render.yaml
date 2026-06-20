@@ -21,12 +21,32 @@ services:
         value: "Europe/Brussels"
       - key: FUTURES_MODE_ENABLED
         value: "true"
+      - key: OPTIMIZED_WEIGHTS_ENABLED
+        value: "true"
+      - key: OPTIMIZED_WEIGHTS_FILE
+        value: "optimized_weights.json"
       - key: FUTURES_MIN_CONFIDENCE
         value: "72"
       - key: FUTURES_MIN_EDGE
         value: "8"
       - key: FUTURES_MIN_RR
         value: "1.8"
+      - key: FUTURES_ACCOUNT_BALANCE
+        value: "500"
+      - key: FUTURES_MAX_RISK_PCT
+        value: "2"
+      - key: FUTURES_MAX_LEVERAGE
+        value: "5"
+      - key: FUTURES_MAX_STOP_LOSS_PCT
+        value: "5"
+      - key: FUTURES_MAX_DAILY_LOSS_PCT
+        value: "5"
+      - key: FUTURES_MAX_DAILY_LOSING_TRADES
+        value: "3"
+      - key: FUTURES_FLOW_PERIOD
+        value: "15m"
+      - key: FUTURES_FLOW_LIMIT
+        value: "24"
       - key: FUTURES_TRACKING_ENABLED
         value: "true"
       - key: FUTURES_SIGNAL_HISTORY_FILE
@@ -66,12 +86,32 @@ services:
         value: "BTC/ETH v2"
       - key: FUTURES_MODE_ENABLED
         value: "true"
+      - key: OPTIMIZED_WEIGHTS_ENABLED
+        value: "true"
+      - key: OPTIMIZED_WEIGHTS_FILE
+        value: "optimized_weights.json"
       - key: FUTURES_MIN_CONFIDENCE
         value: "72"
       - key: FUTURES_MIN_EDGE
         value: "8"
       - key: FUTURES_MIN_RR
         value: "1.8"
+      - key: FUTURES_ACCOUNT_BALANCE
+        value: "500"
+      - key: FUTURES_MAX_RISK_PCT
+        value: "2"
+      - key: FUTURES_MAX_LEVERAGE
+        value: "5"
+      - key: FUTURES_MAX_STOP_LOSS_PCT
+        value: "5"
+      - key: FUTURES_MAX_DAILY_LOSS_PCT
+        value: "5"
+      - key: FUTURES_MAX_DAILY_LOSING_TRADES
+        value: "3"
+      - key: FUTURES_FLOW_PERIOD
+        value: "15m"
+      - key: FUTURES_FLOW_LIMIT
+        value: "24"
       - key: FUTURES_TRACKING_ENABLED
         value: "true"
       - key: FUTURES_SIGNAL_HISTORY_FILE

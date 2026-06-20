@@ -10,10 +10,19 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
 from exchange_fetcher import ExchangeConsensus
-from futures_tracker import FuturesSignalCandidate, track_futures_signals
+from futures_flow import FuturesFlowSnapshot
+from futures_tracker import FuturesSignalCandidate, daily_futures_risk_state, track_futures_signals
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 from macro_fetcher import MarketContext
+from market_regime import (
+    MarketRegime,
+    MarketRegimeResult,
+    RegimeFrame,
+    classify_market_regime,
+    is_near_middle_of_range,
+)
 from onchain_fetcher import OnChainFlow, StablecoinReserve
+from risk_engine import RiskPlan, RiskStatus, calculate_futures_risk
 from signal_weights import load_signal_weights
 from signal_tracker import (
     SignalCandidate,
@@ -33,6 +42,14 @@ FUTURES_MODE_ENABLED = os.getenv("FUTURES_MODE_ENABLED", "true").lower() not in 
 FUTURES_MIN_CONFIDENCE = int(os.getenv("FUTURES_MIN_CONFIDENCE", "72"))
 FUTURES_MIN_EDGE = int(os.getenv("FUTURES_MIN_EDGE", "8"))
 FUTURES_MIN_RR = float(os.getenv("FUTURES_MIN_RR", "1.8"))
+FUTURES_ACCOUNT_BALANCE = float(os.getenv("FUTURES_ACCOUNT_BALANCE", "500"))
+FUTURES_MAX_RISK_PCT = float(os.getenv("FUTURES_MAX_RISK_PCT", "2"))
+FUTURES_MAX_LEVERAGE = int(os.getenv("FUTURES_MAX_LEVERAGE", "5"))
+FUTURES_MAX_STOP_LOSS_PCT = float(os.getenv("FUTURES_MAX_STOP_LOSS_PCT", "5"))
+FUTURES_MAX_DAILY_LOSS_PCT = float(os.getenv("FUTURES_MAX_DAILY_LOSS_PCT", "5"))
+FUTURES_MAX_DAILY_LOSING_TRADES = int(os.getenv("FUTURES_MAX_DAILY_LOSING_TRADES", "3"))
+FUTURES_TODAY_LOSS_PCT = float(os.getenv("FUTURES_TODAY_LOSS_PCT", "0"))
+FUTURES_TODAY_LOSING_TRADES = int(os.getenv("FUTURES_TODAY_LOSING_TRADES", "0"))
 
 
 @dataclass(frozen=True)
@@ -47,6 +64,7 @@ class TimeframeAnalysis:
     ema7: float
     ema20: float
     ema50: float
+    ema50_slope_pct: float
     ema200: float
     macd_histogram: float
     momentum_pct: float
@@ -84,6 +102,9 @@ class FuturesSignal:
     stop: float | None
     rr: float | None
     needs_trigger: bool = False
+    market_regime: MarketRegimeResult | None = None
+    risk_plan: RiskPlan | None = None
+    futures_flow: FuturesFlowSnapshot | None = None
 
 
 def _trend_from_score(score: int) -> str:
@@ -396,6 +417,7 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
     ema50_now = ema(closes, 50)
     ema200_now = ema(closes, 200)
     ema20_prev, ema50_prev = previous_ema_pair(closes, 20, 50)
+    ema50_slope_pct = ((ema50_now - ema50_prev) / ema50_prev) * 100 if ema50_prev else 0.0
     _, _, macd_hist = macd(closes)
     _, _, macd_hist_prev = macd(closes[:-1])
     lower_band, middle_band, upper_band = bollinger_bands(closes)
@@ -451,6 +473,7 @@ def analyze_timeframe(timeframe: str, candles: list[Candle]) -> TimeframeAnalysi
         ema7=ema7_now,
         ema20=ema20_now,
         ema50=ema50_now,
+        ema50_slope_pct=ema50_slope_pct,
         ema200=ema200_now,
         macd_histogram=macd_hist,
         momentum_pct=momentum,
@@ -524,6 +547,14 @@ def _fmt_price(value: float) -> str:
     if value >= 1:
         return f"{value:.3f}".rstrip("0").rstrip(".")
     if value >= 0.1:
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def _fmt_quantity(value: float) -> str:
+    if value >= 100:
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    if value >= 1:
         return f"{value:.4f}".rstrip("0").rstrip(".")
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
@@ -1045,6 +1076,71 @@ def _timeframe_map(symbol_analysis: SymbolAnalysis) -> dict[str, TimeframeAnalys
     return {item.timeframe: item for item in symbol_analysis.timeframes}
 
 
+def _component_weight(optimized_weights, market_regime: MarketRegimeResult | None, component: str) -> float:
+    if optimized_weights is None or not hasattr(optimized_weights, "component_weight"):
+        return 1.0
+    regime = market_regime.regime.value if market_regime else None
+    return float(optimized_weights.component_weight(component, regime))
+
+
+def _weighted_points(
+    points: int | float,
+    optimized_weights,
+    market_regime: MarketRegimeResult | None,
+    component: str,
+) -> int:
+    return int(round(points * _component_weight(optimized_weights, market_regime, component)))
+
+
+def _macd_bias(item_15m: TimeframeAnalysis, item_1h: TimeframeAnalysis) -> int:
+    bias = 0
+    bias += 3 if item_15m.macd_histogram > 0 else -3
+    bias += 4 if item_1h.macd_histogram > 0 else -4
+    return bias
+
+
+def _regime_frame_from_timeframe(item: TimeframeAnalysis) -> RegimeFrame:
+    volatility_pct = 0.0
+    if item.bollinger_middle > 0:
+        volatility_pct = ((item.bollinger_upper - item.bollinger_lower) / item.bollinger_middle) * 100
+    return RegimeFrame(
+        timeframe=item.timeframe,
+        close=item.close,
+        ema50=item.ema50,
+        ema200=item.ema200,
+        ema50_slope_pct=item.ema50_slope_pct,
+        volatility_pct=volatility_pct,
+        trend_score=item.trend_score,
+        rsi=item.rsi,
+        momentum_pct=item.momentum_pct,
+        support=item.support,
+        resistance=item.resistance,
+    )
+
+
+def _market_regime_from_analyses(
+    analyses: list[SymbolAnalysis],
+    market_context: MarketContext | None,
+) -> MarketRegimeResult:
+    btc = next((analysis for analysis in analyses if analysis.symbol == "BTCUSDT"), None)
+    btc_dominance_pct = market_context.btc_dominance_pct if market_context else None
+    if not btc:
+        return classify_market_regime(None, btc_dominance_pct=btc_dominance_pct)
+
+    frames = _timeframe_map(btc)
+    frame_4h = (
+        _regime_frame_from_timeframe(item_4h)
+        if (item_4h := frames.get("4h"))
+        else None
+    )
+    frame_1d = (
+        _regime_frame_from_timeframe(item_1d)
+        if (item_1d := frames.get("1d"))
+        else None
+    )
+    return classify_market_regime(frame_4h, frame_1d, btc_dominance_pct)
+
+
 def _rise_signal(
     symbol_analysis: SymbolAnalysis,
     flow_stats: dict[str, MarketStat] | None,
@@ -1409,6 +1505,8 @@ def _confidence_score(
     stablecoin_reserve: StablecoinReserve | None,
     market_context: MarketContext | None,
     rr: float | None,
+    optimized_weights=None,
+    market_regime: MarketRegimeResult | None = None,
 ) -> int:
     frames = _timeframe_map(symbol_analysis)
     item_15m = frames.get("15m")
@@ -1418,9 +1516,14 @@ def _confidence_score(
         return 0
 
     score = 50
-    score += item_15m.trend_score * 2
-    score += item_1h.trend_score * 3
-    score += item_4h.trend_score
+    score += _weighted_points(
+        item_15m.trend_score * 2 + item_1h.trend_score * 3 + item_4h.trend_score,
+        optimized_weights,
+        market_regime,
+        "ema_trend",
+    )
+    macd_extra = _macd_bias(item_15m, item_1h)
+    score += int(round(macd_extra * (_component_weight(optimized_weights, market_regime, "macd") - 1.0)))
     score += 10 if entry_allowed else -5
 
     if altcoin_blocked:
@@ -1430,20 +1533,20 @@ def _confidence_score(
     flow_amount = _flow_pressure_usd(flow)
     if flow_amount is not None:
         if flow_amount >= 500_000:
-            score += 10
+            score += _weighted_points(10, optimized_weights, market_regime, "volume")
         elif flow_amount >= 100_000:
-            score += 6
+            score += _weighted_points(6, optimized_weights, market_regime, "volume")
         elif flow_amount <= -500_000:
-            score -= 12
+            score -= _weighted_points(12, optimized_weights, market_regime, "volume")
         elif flow_amount <= -100_000:
-            score -= 8
+            score -= _weighted_points(8, optimized_weights, market_regime, "volume")
 
     confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
     if confirm:
         if confirm.price_change_pct >= 0.3:
-            score += 5
+            score += _weighted_points(5, optimized_weights, market_regime, "volume")
         elif confirm.price_change_pct <= -0.3:
-            score -= 5
+            score -= _weighted_points(5, optimized_weights, market_regime, "volume")
 
     fake_score = max(
         _fake_risk_score(item_15m, order_book, onchain_flow),
@@ -1452,7 +1555,12 @@ def _confidence_score(
     score -= fake_score * 6
 
     if order_book:
-        score += int(max(min(order_book.imbalance_pct / 4, 8), -8))
+        score += _weighted_points(
+            int(max(min(order_book.imbalance_pct / 4, 8), -8)),
+            optimized_weights,
+            market_regime,
+            "order_book",
+        )
 
     if _onchain_sell_pressure(onchain_flow):
         score -= 10
@@ -1463,9 +1571,9 @@ def _confidence_score(
         score += 4
 
     if item_15m.rsi >= 75:
-        score -= 10
+        score -= _weighted_points(10, optimized_weights, market_regime, "rsi")
     elif 42 <= item_15m.rsi <= 64:
-        score += 3
+        score += _weighted_points(3, optimized_weights, market_regime, "rsi")
 
     if rr is not None:
         if rr >= 3:
@@ -2045,6 +2153,95 @@ def _futures_rr(setup: tuple[float, float, float, float, bool] | None, side: str
     return reward / risk
 
 
+def _futures_risk_plan(
+    side: str,
+    entry: float,
+    target: float,
+    stop: float,
+    min_rr: float,
+    confidence: int,
+    market_regime: MarketRegimeResult | None = None,
+    daily_loss_pct: float | None = None,
+    daily_losing_trades: int | None = None,
+) -> RiskPlan:
+    max_leverage = FUTURES_MAX_LEVERAGE
+    if market_regime and market_regime.regime == MarketRegime.LATE_BULL:
+        max_leverage = min(max_leverage, 3)
+    return calculate_futures_risk(
+        side=side,
+        entry=entry,
+        stop_loss=stop,
+        take_profit=target,
+        account_balance=FUTURES_ACCOUNT_BALANCE,
+        risk_pct=FUTURES_MAX_RISK_PCT,
+        confidence=confidence,
+        max_leverage=max_leverage,
+        min_rr=min_rr,
+        max_stop_loss_pct=FUTURES_MAX_STOP_LOSS_PCT,
+        daily_loss_pct=FUTURES_TODAY_LOSS_PCT if daily_loss_pct is None else daily_loss_pct,
+        daily_losing_trades=(
+            FUTURES_TODAY_LOSING_TRADES
+            if daily_losing_trades is None
+            else daily_losing_trades
+        ),
+        max_daily_loss_pct=FUTURES_MAX_DAILY_LOSS_PCT,
+        max_daily_losing_trades=FUTURES_MAX_DAILY_LOSING_TRADES,
+    )
+
+
+def _futures_range_middle(symbol_analysis: SymbolAnalysis) -> bool:
+    day_levels = _day_trade_levels(symbol_analysis)
+    if day_levels:
+        close, support, resistance, _ = day_levels
+        if is_near_middle_of_range(close, support, resistance):
+            return True
+
+    frames = _timeframe_map(symbol_analysis)
+    item_4h = frames.get("4h")
+    if item_4h:
+        return is_near_middle_of_range(item_4h.close, item_4h.support, item_4h.resistance)
+    return False
+
+
+def _weighted_futures_flow_scores(
+    item_15m: TimeframeAnalysis,
+    futures_flow: FuturesFlowSnapshot,
+    optimized_weights,
+    market_regime: MarketRegimeResult | None,
+) -> tuple[int, int]:
+    long_score = 0
+    short_score = 0
+    oi_change_pct = futures_flow.oi_change_pct
+    funding_pct = futures_flow.funding_rate_pct
+    price_change_pct = item_15m.change_pct
+    volume_momentum_pct = item_15m.volume_change_pct
+
+    if price_change_pct >= 0.8 and oi_change_pct is not None and oi_change_pct >= 6:
+        short_score += _weighted_points(12, optimized_weights, market_regime, "open_interest")
+    if funding_pct is not None and funding_pct >= 0.05:
+        short_score += _weighted_points(10, optimized_weights, market_regime, "funding_rate")
+    elif funding_pct is not None and funding_pct >= 0.025:
+        short_score += _weighted_points(5, optimized_weights, market_regime, "funding_rate")
+
+    if futures_flow.crowding in {"LONG_CROWDED", "TOP_LONG_CROWDED"}:
+        short_score += _weighted_points(10, optimized_weights, market_regime, "long_short_ratio")
+    if price_change_pct > 0 and volume_momentum_pct <= -10:
+        short_score += _weighted_points(6, optimized_weights, market_regime, "volume")
+
+    if futures_flow.crowding in {"SHORT_CROWDED", "TOP_SHORT_CROWDED"}:
+        long_score += _weighted_points(12, optimized_weights, market_regime, "long_short_ratio")
+    if funding_pct is not None and funding_pct <= -0.05:
+        long_score += _weighted_points(10, optimized_weights, market_regime, "funding_rate")
+    elif funding_pct is not None and funding_pct <= -0.025:
+        long_score += _weighted_points(5, optimized_weights, market_regime, "funding_rate")
+    if price_change_pct >= 0.25 and oi_change_pct is not None and 1.5 <= oi_change_pct <= 8:
+        long_score += _weighted_points(8, optimized_weights, market_regime, "open_interest")
+    if price_change_pct <= -0.25 and oi_change_pct is not None and oi_change_pct <= -1:
+        long_score += _weighted_points(4, optimized_weights, market_regime, "open_interest")
+
+    return long_score, short_score
+
+
 def _futures_direction_scores(
     symbol_analysis: SymbolAnalysis,
     altcoin_blocked: bool,
@@ -2054,6 +2251,9 @@ def _futures_direction_scores(
     onchain_flow: OnChainFlow | None,
     stablecoin_reserve: StablecoinReserve | None,
     market_context: MarketContext | None,
+    market_regime: MarketRegimeResult | None = None,
+    futures_flow: FuturesFlowSnapshot | None = None,
+    optimized_weights=None,
 ) -> tuple[int, int]:
     frames = _timeframe_map(symbol_analysis)
     item_15m = frames.get("15m")
@@ -2062,9 +2262,17 @@ def _futures_direction_scores(
     if not item_15m or not item_1h or not item_4h:
         return 0, 0
 
-    trend_bias = item_15m.trend_score * 2 + item_1h.trend_score * 3 + item_4h.trend_score
+    trend_bias = _weighted_points(
+        item_15m.trend_score * 2 + item_1h.trend_score * 3 + item_4h.trend_score,
+        optimized_weights,
+        market_regime,
+        "ema_trend",
+    )
     long_score = 50 + trend_bias
     short_score = 50 - trend_bias
+    macd_extra = int(round(_macd_bias(item_15m, item_1h) * (_component_weight(optimized_weights, market_regime, "macd") - 1.0)))
+    long_score += macd_extra
+    short_score -= macd_extra
 
     if altcoin_blocked:
         long_score -= 18
@@ -2074,26 +2282,30 @@ def _futures_direction_scores(
     flow_amount = _flow_pressure_usd(flow)
     if flow_amount is not None:
         if flow_amount >= 500_000:
-            long_score += 10
-            short_score -= 10
+            adjust = _weighted_points(10, optimized_weights, market_regime, "volume")
+            long_score += adjust
+            short_score -= adjust
         elif flow_amount >= 100_000:
-            long_score += 6
-            short_score -= 6
+            adjust = _weighted_points(6, optimized_weights, market_regime, "volume")
+            long_score += adjust
+            short_score -= adjust
         elif flow_amount <= -500_000:
-            long_score -= 12
-            short_score += 10
+            long_score -= _weighted_points(12, optimized_weights, market_regime, "volume")
+            short_score += _weighted_points(10, optimized_weights, market_regime, "volume")
         elif flow_amount <= -100_000:
-            long_score -= 8
-            short_score += 6
+            long_score -= _weighted_points(8, optimized_weights, market_regime, "volume")
+            short_score += _weighted_points(6, optimized_weights, market_regime, "volume")
 
     confirm = confirm_stats.get(symbol_analysis.symbol) if confirm_stats else None
     if confirm:
         if confirm.price_change_pct >= 0.3:
-            long_score += 5
-            short_score -= 5
+            adjust = _weighted_points(5, optimized_weights, market_regime, "volume")
+            long_score += adjust
+            short_score -= adjust
         elif confirm.price_change_pct <= -0.3:
-            long_score -= 5
-            short_score += 5
+            adjust = _weighted_points(5, optimized_weights, market_regime, "volume")
+            long_score -= adjust
+            short_score += adjust
 
     fake_score = max(
         _fake_risk_score(item_15m, order_book, onchain_flow),
@@ -2104,7 +2316,12 @@ def _futures_direction_scores(
         short_score += 5
 
     if order_book:
-        ob_adjust = int(max(min(order_book.imbalance_pct / 4, 8), -8))
+        ob_adjust = _weighted_points(
+            int(max(min(order_book.imbalance_pct / 4, 8), -8)),
+            optimized_weights,
+            market_regime,
+            "order_book",
+        )
         long_score += ob_adjust
         short_score -= ob_adjust
 
@@ -2120,20 +2337,44 @@ def _futures_direction_scores(
         short_score -= 4
 
     if item_15m.rsi >= 75:
-        long_score -= 12
-        short_score += 4
+        long_score -= _weighted_points(12, optimized_weights, market_regime, "rsi")
+        short_score += _weighted_points(4, optimized_weights, market_regime, "rsi")
     elif item_15m.rsi <= 25:
-        long_score += 4
-        short_score -= 12
+        long_score += _weighted_points(4, optimized_weights, market_regime, "rsi")
+        short_score -= _weighted_points(12, optimized_weights, market_regime, "rsi")
     elif 42 <= item_15m.rsi <= 64:
         if trend_bias >= 0:
-            long_score += 3
+            long_score += _weighted_points(3, optimized_weights, market_regime, "rsi")
         else:
-            short_score += 3
+            short_score += _weighted_points(3, optimized_weights, market_regime, "rsi")
 
     news_impact = _news_impact(market_context)
     long_score += news_impact
     short_score -= news_impact
+
+    if market_regime:
+        if market_regime.regime == MarketRegime.BULL:
+            long_score += _weighted_points(10, optimized_weights, market_regime, "market_regime")
+            short_score -= _weighted_points(15, optimized_weights, market_regime, "market_regime")
+        elif market_regime.regime == MarketRegime.BEAR:
+            short_score += _weighted_points(12, optimized_weights, market_regime, "market_regime")
+            long_score -= _weighted_points(8, optimized_weights, market_regime, "market_regime")
+
+    if futures_flow:
+        flow_long_score, flow_short_score = _weighted_futures_flow_scores(
+            item_15m,
+            futures_flow,
+            optimized_weights,
+            market_regime,
+        )
+        long_score += flow_long_score
+        short_score += flow_short_score
+        bias_penalty = _weighted_points(4, optimized_weights, market_regime, "long_short_ratio")
+        if futures_flow.smart_money_bias == "LONG":
+            short_score -= bias_penalty
+        elif futures_flow.smart_money_bias == "SHORT":
+            long_score -= bias_penalty
+
     return _clamp(long_score), _clamp(short_score)
 
 
@@ -2146,13 +2387,30 @@ def _futures_signal(
     onchain_flow: OnChainFlow | None,
     stablecoin_reserve: StablecoinReserve | None,
     market_context: MarketContext | None,
+    market_regime: MarketRegimeResult | None = None,
+    daily_loss_pct: float | None = None,
+    daily_losing_trades: int | None = None,
+    futures_flow: FuturesFlowSnapshot | None = None,
+    optimized_weights=None,
 ) -> FuturesSignal:
     frames = _timeframe_map(symbol_analysis)
     item_15m = frames.get("15m")
     item_1h = frames.get("1h")
     item_4h = frames.get("4h")
     if not item_15m or not item_1h or not item_4h:
-        return FuturesSignal("BEKLE", "BEKLE", 0, 0, "veri eksik", None, None, None, None)
+        return FuturesSignal(
+            "BEKLE",
+            "BEKLE",
+            0,
+            0,
+            "veri eksik",
+            None,
+            None,
+            None,
+            None,
+            market_regime=market_regime,
+            futures_flow=futures_flow,
+        )
 
     long_score, short_score = _futures_direction_scores(
         symbol_analysis,
@@ -2163,6 +2421,9 @@ def _futures_signal(
         onchain_flow,
         stablecoin_reserve,
         market_context,
+        market_regime,
+        futures_flow,
+        optimized_weights,
     )
     flow = flow_stats.get(symbol_analysis.symbol) if flow_stats else None
     flow_amount = _flow_pressure_usd(flow)
@@ -2225,6 +2486,15 @@ def _futures_signal(
     if orderbook_strong:
         short_blockers.append("alış duvarı")
 
+    range_middle = bool(
+        market_regime
+        and market_regime.regime == MarketRegime.RANGE
+        and _futures_range_middle(symbol_analysis)
+    )
+    if range_middle:
+        long_blockers.append("RANGE orta bant")
+        short_blockers.append("RANGE orta bant")
+
     long_ready = (
         long_score >= FUTURES_MIN_CONFIDENCE
         and long_score >= short_score + FUTURES_MIN_EDGE
@@ -2270,27 +2540,83 @@ def _futures_signal(
         rr = _futures_rr(setup, bias) if setup else None
         if setup:
             entry, target, stop, _, needs_trigger = setup
-            return FuturesSignal("BEKLE", bias, confidence, opposite, reason, entry, target, stop, rr, needs_trigger)
-        return FuturesSignal("BEKLE", bias, confidence, opposite, reason, None, None, None, rr)
+            return FuturesSignal(
+                "BEKLE",
+                bias,
+                confidence,
+                opposite,
+                reason,
+                entry,
+                target,
+                stop,
+                rr,
+                needs_trigger,
+                market_regime,
+                futures_flow=futures_flow,
+            )
+        return FuturesSignal(
+            "BEKLE",
+            bias,
+            confidence,
+            opposite,
+            reason,
+            None,
+            None,
+            None,
+            rr,
+            market_regime=market_regime,
+            futures_flow=futures_flow,
+        )
 
     setup = _futures_setup_values(symbol_analysis, side, True)
     rr = _futures_rr(setup, side)
-    if rr is None or rr < FUTURES_MIN_RR:
-        entry, target, stop, _, needs_trigger = setup if setup else (None, None, None, None, False)
+    min_rr = max(FUTURES_MIN_RR, market_regime.min_rr if market_regime else FUTURES_MIN_RR)
+    if not setup:
         return FuturesSignal(
             "BEKLE",
             side,
             confidence,
             opposite,
-            "R/R düşük",
-            entry,
-            target,
-            stop,
+            "risk planı yok",
+            None,
+            None,
+            None,
             rr,
-            needs_trigger,
+            False,
+            market_regime,
+            futures_flow=futures_flow,
         )
 
     entry, target, stop, _, needs_trigger = setup
+    risk_plan = _futures_risk_plan(
+        side,
+        entry,
+        target,
+        stop,
+        min_rr,
+        confidence,
+        market_regime,
+        daily_loss_pct,
+        daily_losing_trades,
+    )
+    if risk_plan.status in {RiskStatus.SKIP, RiskStatus.NO_TRADE}:
+        reason_prefix = "Risk NO_TRADE" if risk_plan.status == RiskStatus.NO_TRADE else "Risk SKIP"
+        return FuturesSignal(
+            "BEKLE",
+            side,
+            confidence,
+            opposite,
+            f"{reason_prefix}: {risk_plan.reason}",
+            entry,
+            target,
+            stop,
+            risk_plan.rr,
+            needs_trigger,
+            market_regime,
+            risk_plan,
+            futures_flow,
+        )
+
     return FuturesSignal(
         side,
         side,
@@ -2300,8 +2626,11 @@ def _futures_signal(
         entry,
         target,
         stop,
-        rr,
+        risk_plan.rr,
         needs_trigger,
+        market_regime,
+        risk_plan,
+        futures_flow,
     )
 
 
@@ -2309,29 +2638,142 @@ def _futures_decision_line(signal: FuturesSignal) -> str:
     direction = signal.side if signal.side in {"LONG", "SHORT"} else signal.bias
     direction = direction if direction in {"LONG", "SHORT"} else "NÖTR"
     direction_emoji = _futures_side_emoji(direction)
+    regime_suffix = _futures_regime_suffix(signal)
 
     if signal.side == "BEKLE":
         return (
             f"Futures Yön: {direction} {direction_emoji} | İşlem: BEKLE 🟡 | "
             f"Güven {signal.confidence}/100 {_score_emoji(signal.confidence)} | {signal.reason}"
+            f"{regime_suffix}"
         )
 
     trigger_text = " | tetik bekle" if signal.needs_trigger else ""
     return (
         f"Futures Yön: {signal.side} {direction_emoji} | İşlem: AÇ {signal.side} | "
         f"Güven {signal.confidence}/100 "
-        f"{_score_emoji(signal.confidence)} | {signal.reason}{trigger_text}"
+        f"{_score_emoji(signal.confidence)} | {signal.reason}{trigger_text}{regime_suffix}"
     )
 
 
-def _futures_plan_line(signal: FuturesSignal) -> str | None:
-    if signal.side not in {"LONG", "SHORT"} or signal.entry is None or signal.target is None or signal.stop is None:
+def _futures_regime_suffix(signal: FuturesSignal) -> str:
+    regime = signal.market_regime
+    if not regime:
+        return ""
+    if regime.regime == MarketRegime.LATE_BULL:
+        parts = [regime.leverage_note]
+        if regime.warning:
+            parts.append(regime.warning)
+        return " | " + " | ".join(parts)
+    if regime.regime == MarketRegime.RANGE:
+        return " | RANGE: R/R min 1:2.5 | orta bant yok"
+    return ""
+
+
+def _fmt_optional_pct(value: float | None, decimals: int = 2) -> str:
+    if value is None:
+        return "?"
+    return f"{value:+.{decimals}f}%"
+
+
+def _fmt_ratio_side(value: float | None) -> str:
+    if value is None:
+        return "?"
+    return f"{value * 100:.0f}%"
+
+
+def _futures_flow_line(flow: FuturesFlowSnapshot | None) -> str | None:
+    if not flow:
+        return None
+    oi_value = (
+        f" | value {_fmt_abs_amount(flow.open_interest_value, '$')}"
+        if flow.open_interest_value is not None
+        else ""
+    )
+    global_ratio = "?"
+    if flow.global_long_short_ratio is not None:
+        global_ratio = f"{flow.global_long_short_ratio:.2f}"
+    top_ratio = "?"
+    if flow.top_long_short_ratio is not None:
+        top_ratio = f"{flow.top_long_short_ratio:.2f}"
+    score_text = f"L{flow.long_score}/S{flow.short_score}"
+    return "\n".join(
+        [
+            "Futures Flow:",
+            f"OI: {_fmt_optional_pct(flow.oi_change_pct)}{oi_value}",
+            f"Funding: {_fmt_optional_pct(flow.funding_rate_pct, 4)}",
+            (
+                "Long/Short: "
+                f"global {_fmt_ratio_side(flow.global_long_pct)}/{_fmt_ratio_side(flow.global_short_pct)} "
+                f"({global_ratio}) | top {_fmt_ratio_side(flow.top_long_pct)}/{_fmt_ratio_side(flow.top_short_pct)} "
+                f"({top_ratio})"
+            ),
+            f"Crowding: {flow.crowding}",
+            f"Smart Money Bias: {flow.smart_money_bias} | {score_text} | {flow.reason}",
+        ]
+    )
+
+
+def _base_asset(symbol: str) -> str:
+    return symbol[:-4] if symbol.endswith("USDT") else symbol
+
+
+def _futures_plan_line(symbol: str, signal: FuturesSignal) -> str | None:
+    if signal.entry is None or signal.target is None or signal.stop is None:
+        return None
+    if signal.side not in {"LONG", "SHORT"} and not signal.risk_plan:
         return None
     rr_text = "?" if signal.rr is None else f"1:{signal.rr:.1f}"
     entry_label = "Tetik" if signal.needs_trigger else "Giriş"
+    if not signal.risk_plan:
+        return (
+            f"Futures Plan: {entry_label} {_fmt_price(signal.entry)} | "
+            f"Hedef {_fmt_price(signal.target)} | Stop {_fmt_price(signal.stop)} | R/R {rr_text}"
+        )
+
+    risk = signal.risk_plan
+    base_asset = _base_asset(symbol)
+    return "\n".join(
+        [
+            "Futures Risk Plan:",
+            f"Balance: {risk.account_balance:.0f} USDT",
+            f"Confidence: {signal.confidence}/100",
+            f"Risk: {risk.risk_pct:.1f}% ({risk.risk_amount:.2f} USDT)",
+            (
+                "Daily guard: "
+                f"loss {risk.daily_loss_pct:.1f}/{risk.max_daily_loss_pct:.1f}% | "
+                f"loss trades {risk.daily_losing_trades}/{risk.max_daily_losing_trades}"
+            ),
+            f"Entry: {_fmt_price(signal.entry)}" if not signal.needs_trigger else f"Entry/Tetik: {_fmt_price(signal.entry)}",
+            f"Stop Loss: {_fmt_price(signal.stop)}",
+            f"TP1: {_fmt_price(risk.tp1)}",
+            f"TP2: {_fmt_price(risk.tp2)}",
+            f"R/R: {rr_text}",
+            f"Position size: {_fmt_quantity(risk.position_size)} {base_asset}",
+            f"Suggested margin: {risk.suggested_margin:.2f} USDT",
+            f"Suggested leverage: {risk.suggested_leverage}x",
+            f"Risk status: {risk.status.value}" + (f" | {risk.reason}" if risk.reason else ""),
+        ]
+    )
+
+
+def _market_regime_line(regime: MarketRegimeResult) -> str:
+    emoji = {
+        MarketRegime.BULL: "🟢",
+        MarketRegime.BEAR: "🔴",
+        MarketRegime.RANGE: "🟡",
+        MarketRegime.LATE_BULL: "🟠",
+    }[regime.regime]
+    dominance = (
+        f" | BTC.D {regime.btc_dominance_pct:.1f}%"
+        if regime.btc_dominance_pct is not None
+        else ""
+    )
+    warning = f" | {regime.warning}" if regime.warning else ""
+    rr_policy = " | R/R min 1:2.5" if regime.regime == MarketRegime.RANGE else ""
     return (
-        f"Futures Plan: {entry_label} {_fmt_price(signal.entry)} | "
-        f"Hedef {_fmt_price(signal.target)} | Stop {_fmt_price(signal.stop)} | R/R {rr_text}"
+        f"Piyasa Rejimi: {regime.regime.value} {emoji} | "
+        f"Güven {regime.confidence}/100 | {regime.reason}{dominance} | "
+        f"{regime.leverage_note}{rr_policy}{warning}"
     )
 
 
@@ -2585,6 +3027,7 @@ def build_report(
     stablecoin_reserve: StablecoinReserve | None = None,
     exchange_consensus: dict[str, ExchangeConsensus] | None = None,
     market_context: MarketContext | None = None,
+    futures_flows: dict[str, FuturesFlowSnapshot] | None = None,
 ) -> str:
     report_time = _report_time_line()
     btc_4h_bearish = _btc_4h_bearish(analyses)
@@ -2599,6 +3042,15 @@ def build_report(
     min_entry_confidence = optimized_weights.min_entry_confidence or MIN_ENTRY_CONFIDENCE
     min_entry_rr = optimized_weights.min_entry_rr or MIN_ENTRY_RR
     futures_mode = FUTURES_MODE_ENABLED
+    market_regime = _market_regime_from_analyses(analyses, market_context) if futures_mode else None
+    history_daily_loss_pct, history_daily_losing_trades = (
+        daily_futures_risk_state() if futures_mode else (0.0, 0)
+    )
+    futures_daily_loss_pct = max(FUTURES_TODAY_LOSS_PCT, history_daily_loss_pct)
+    futures_daily_losing_trades = max(
+        FUTURES_TODAY_LOSING_TRADES,
+        history_daily_losing_trades,
+    )
 
     for symbol_analysis in analyses:
         cost = _cost_for(symbol_analysis.symbol, costs)
@@ -2607,6 +3059,7 @@ def build_report(
         display_close = day_levels[0] if day_levels else last_item.close
         altcoin_blocked = (btc_4h_bearish or btc_unavailable) and symbol_analysis.symbol != "BTCUSDT"
         order_book = order_books.get(symbol_analysis.symbol) if order_books else None
+        futures_flow = futures_flows.get(symbol_analysis.symbol) if futures_flows else None
         onchain_flow = onchain_flows.get(symbol_analysis.symbol) if onchain_flows else None
         exchange_view = exchange_consensus.get(symbol_analysis.symbol) if exchange_consensus else None
         alarm_lines = [
@@ -2645,6 +3098,8 @@ def build_report(
             stablecoin_reserve,
             market_context,
             rr,
+            optimized_weights,
+            market_regime,
         )
         quality_adjust, quality_line = _quality_adjustment(
             symbol_analysis.symbol,
@@ -2674,6 +3129,8 @@ def build_report(
                 stablecoin_reserve,
                 market_context,
                 rr,
+                optimized_weights,
+                market_regime,
             )
             confidence = _clamp(confidence + quality_adjust + performance_adjust + optimized_adjust)
         if entry_allowed:
@@ -2698,6 +3155,8 @@ def build_report(
                     stablecoin_reserve,
                     market_context,
                     rr,
+                    optimized_weights,
+                    market_regime,
                 )
                 confidence = _clamp(confidence + quality_adjust + performance_adjust + optimized_adjust)
         confidence_scores.append(confidence)
@@ -2712,6 +3171,11 @@ def build_report(
                 onchain_flow,
                 stablecoin_reserve,
                 market_context,
+                market_regime,
+                futures_daily_loss_pct,
+                futures_daily_losing_trades,
+                futures_flow,
+                optimized_weights,
             )
             if futures_mode
             else None
@@ -2719,7 +3183,12 @@ def build_report(
 
         frames = _timeframe_map(symbol_analysis)
         item_15m = frames.get("15m")
-        if futures_signal and futures_signal.entry and futures_signal.target and futures_signal.stop:
+        risk_skipped = bool(
+            isinstance(futures_signal, FuturesSignal)
+            and futures_signal.risk_plan
+            and futures_signal.risk_plan.status in {RiskStatus.SKIP, RiskStatus.NO_TRADE}
+        )
+        if futures_signal and futures_signal.entry and futures_signal.target and futures_signal.stop and not risk_skipped:
             futures_candidates.append(
                 FuturesSignalCandidate(
                     symbol=symbol_analysis.symbol,
@@ -2733,6 +3202,11 @@ def build_report(
                     rr=futures_signal.rr or 0.0,
                     decision=_futures_decision_line(futures_signal),
                     needs_trigger=futures_signal.needs_trigger,
+                    risk_pct=(
+                        futures_signal.risk_plan.risk_pct
+                        if futures_signal.risk_plan
+                        else 0.0
+                    ),
                 )
             )
         if not futures_mode and setup and item_15m:
@@ -2783,6 +3257,7 @@ def build_report(
         f"Profil: {profile}",
         f"Sürüm: {REPORT_PROFILE_VERSION}",
         *(["Hesap: FUTURES | yön modu LONG/SHORT/BEKLE"] if futures_mode else []),
+        *([_market_regime_line(market_regime)] if futures_mode and market_regime else []),
         (
             _futures_market_mode_line(prepared)
             if futures_mode
@@ -2832,7 +3307,16 @@ def build_report(
         quality_line = item["quality_line"]
         performance_note = item["performance_note"]
         optimized_note = item["optimized_note"]
-        futures_plan = _futures_plan_line(futures_signal) if isinstance(futures_signal, FuturesSignal) else None
+        futures_plan = (
+            _futures_plan_line(symbol_analysis.symbol, futures_signal)
+            if isinstance(futures_signal, FuturesSignal)
+            else None
+        )
+        futures_flow = (
+            _futures_flow_line(futures_signal.futures_flow)
+            if isinstance(futures_signal, FuturesSignal)
+            else None
+        )
 
         lines.extend([
             "",
@@ -2842,6 +3326,7 @@ def build_report(
                 if isinstance(futures_signal, FuturesSignal)
                 else [_simple_decision_line(entry_line)]
             ),
+            *([futures_flow] if futures_flow else []),
             *([futures_plan] if futures_plan else []),
             *([] if futures_mode else [_confidence_line(confidence, rr)]),
             *([flow_line] if (flow_line := _simple_symbol_flow(symbol_analysis.symbol, flow_stats)) else []),
