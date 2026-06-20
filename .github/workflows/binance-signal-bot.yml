@@ -65,4 +65,22 @@ jobs:
             echo "::error::TELEGRAM_BOT_TOKEN veya TELEGRAM_CHAT_ID GitHub secret olarak ekli degil."
             exit 1
           fi
-          python main.py --once --pre-scan-seconds 0
+          set +e
+          python main.py --once --pre-scan-seconds 0 > bot-output.log 2>&1
+          status=$?
+          cat bot-output.log
+          if [ "$status" -ne 0 ]; then
+            python - <<'PY'
+          from pathlib import Path
+
+          output = Path("bot-output.log").read_text(encoding="utf-8", errors="replace")
+          tail = "\n".join(output.splitlines()[-40:])[-6000:]
+          escaped = (
+              tail.replace("%", "%25")
+              .replace("\r", "%0D")
+              .replace("\n", "%0A")
+          )
+          print(f"::error title=Bot run failed::{escaped}")
+          PY
+            exit "$status"
+          fi

@@ -19,6 +19,8 @@ services:
         value: "true"
       - key: REPORT_TIMEZONE
         value: "Europe/Brussels"
+      - key: BINANCE_BASE_URLS
+        value: "https://data-api.binance.vision,https://api1.binance.com,https://api2.binance.com,https://api3.binance.com,https://api.binance.com"
       - key: FUTURES_MODE_ENABLED
         value: "true"
       - key: OPTIMIZED_WEIGHTS_ENABLED
@@ -84,6 +86,8 @@ services:
         value: "Europe/Brussels"
       - key: REPORT_PROFILE_VERSION
         value: "BTC/ETH v2"
+      - key: BINANCE_BASE_URLS
+        value: "https://data-api.binance.vision,https://api1.binance.com,https://api2.binance.com,https://api3.binance.com,https://api.binance.com"
       - key: FUTURES_MODE_ENABLED
         value: "true"
       - key: OPTIMIZED_WEIGHTS_ENABLED
