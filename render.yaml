@@ -28,11 +28,13 @@ services:
       - key: OPTIMIZED_WEIGHTS_FILE
         value: "optimized_weights.json"
       - key: FUTURES_MIN_CONFIDENCE
-        value: "72"
+        value: "85"
       - key: FUTURES_MIN_EDGE
         value: "8"
       - key: FUTURES_MIN_RR
-        value: "1.8"
+        value: "2.5"
+      - key: FUTURES_SIGNAL_CONFIRMATIONS
+        value: "2"
       - key: FUTURES_ACCOUNT_BALANCE
         value: "500"
       - key: FUTURES_MAX_RISK_PCT
@@ -95,11 +97,13 @@ services:
       - key: OPTIMIZED_WEIGHTS_FILE
         value: "optimized_weights.json"
       - key: FUTURES_MIN_CONFIDENCE
-        value: "72"
+        value: "85"
       - key: FUTURES_MIN_EDGE
         value: "8"
       - key: FUTURES_MIN_RR
-        value: "1.8"
+        value: "2.5"
+      - key: FUTURES_SIGNAL_CONFIRMATIONS
+        value: "2"
       - key: FUTURES_ACCOUNT_BALANCE
         value: "500"
       - key: FUTURES_MAX_RISK_PCT

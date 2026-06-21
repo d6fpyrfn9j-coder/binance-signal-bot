@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from data_fetcher import Candle
 from data_fetcher import MarketStat, OrderBookPressure
 from exchange_fetcher import ExchangeConsensus
 from futures_flow import FuturesFlowSnapshot
+from futures_signal_lock import REQUIRED_CONFIRMATIONS, update_and_confirm
 from futures_tracker import FuturesSignalCandidate, daily_futures_risk_state, track_futures_signals
 from indicators import bollinger_bands, ema, macd, momentum_pct, previous_ema_pair, rsi, sma
 from macro_fetcher import MarketContext
@@ -3180,6 +3181,18 @@ def build_report(
             if futures_mode
             else None
         )
+
+        # ADIM 2 — siqnal kilidi: bot stateless oldugu ucun ham siqnal noise-da
+        # LONG<->BEKLE<->SHORT flip-flop edir. Bir yon en az REQUIRED_CONFIRMATIONS
+        # ardisik raporda tutmadan "AC" cixmasin; o ana qeder BEKLE goster.
+        if isinstance(futures_signal, FuturesSignal):
+            _streak, _confirmed = update_and_confirm(symbol_analysis.symbol, futures_signal.side)
+            if futures_signal.side in {"LONG", "SHORT"} and not _confirmed:
+                futures_signal = replace(
+                    futures_signal,
+                    side="BEKLE",
+                    reason=f"{futures_signal.side} teyit {_streak}/{REQUIRED_CONFIRMATIONS}, bekle",
+                )
 
         frames = _timeframe_map(symbol_analysis)
         item_15m = frames.get("15m")
