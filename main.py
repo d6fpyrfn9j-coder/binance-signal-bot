@@ -284,11 +284,18 @@ def load_market_stats() -> dict[str, MarketStat]:
 
 
 def load_symbol_analysis(symbol: str):
-    timeframes = TIMEFRAMES + (BTC_REGIME_TIMEFRAMES if symbol == "BTCUSDT" else ())
     candles_by_timeframe = {
         timeframe: fetch_binance_klines(symbol, timeframe, limit=250)
-        for timeframe in timeframes
+        for timeframe in TIMEFRAMES
     }
+    # ADIM 3 — buyuk trend yon kapisi icin her sembol icin 1g de cek.
+    # Opsiyonel: yeterli gunluk gecmis yoksa sembolu dusurmeden atla.
+    try:
+        daily = fetch_binance_klines(symbol, "1d", limit=250)
+        if len(daily) >= 210:
+            candles_by_timeframe["1d"] = daily
+    except Exception:
+        logging.exception("Could not fetch %s 1d candles", symbol)
     return analyze_symbol(symbol, candles_by_timeframe)
 
 

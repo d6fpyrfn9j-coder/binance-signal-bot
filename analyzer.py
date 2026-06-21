@@ -2190,6 +2190,56 @@ def _futures_risk_plan(
     )
 
 
+def _higher_tf_direction(symbol_analysis: SymbolAnalysis) -> str:
+    """ADIM 3 — buyuk trend yonu: 1g + 4s.
+
+    Ikisi ayni yonde -> o yon (LONG/SHORT). Celiskili -> MIXED (islem yok).
+    Biri belirsizse belirgin olani al; ikisi de belirsizse NEUTRAL.
+    1g verisi yoksa sadece 4s'e bakilir.
+    """
+    frames = _timeframe_map(symbol_analysis)
+    item_4h = frames.get("4h")
+    item_1d = frames.get("1d")
+    if not item_4h:
+        return "NEUTRAL"
+
+    def _dir(item: TimeframeAnalysis | None) -> str:
+        if not item:
+            return "NEUTRAL"
+        if item.trend_score >= 3:
+            return "LONG"
+        if item.trend_score <= -3:
+            return "SHORT"
+        return "NEUTRAL"
+
+    d4 = _dir(item_4h)
+    if item_1d is None:
+        return d4
+    d1 = _dir(item_1d)
+    if d4 != "NEUTRAL" and d1 != "NEUTRAL":
+        return d4 if d4 == d1 else "MIXED"
+    return d4 if d4 != "NEUTRAL" else d1
+
+
+def _futures_management_advice(signal: FuturesSignal) -> str | None:
+    """ADIM 5 — asimetrik risk tavsiyesi (bot emir acmaz, sadece metin onerisi)."""
+    if signal.side not in {"LONG", "SHORT"} or signal.entry is None or signal.stop is None:
+        return None
+    risk = abs(signal.entry - signal.stop)
+    if risk <= 0:
+        return None
+    if signal.side == "LONG":
+        break_even = signal.entry + risk
+        trail = "yukseldikce stop'u 1R arkadan surukle"
+    else:
+        break_even = signal.entry - risk
+        trail = "dustukce stop'u 1R arkadan surukle"
+    return (
+        f"+1R'de ({_fmt_price(break_even)}) stop'u girise cek (kayipsiz), "
+        f"sonra trailing: {trail}"
+    )
+
+
 def _futures_range_middle(symbol_analysis: SymbolAnalysis) -> bool:
     day_levels = _day_trade_levels(symbol_analysis)
     if day_levels:
@@ -2496,6 +2546,16 @@ def _futures_signal(
         long_blockers.append("RANGE orta bant")
         short_blockers.append("RANGE orta bant")
 
+    # ADIM 3 — multi-timeframe yon kapisi: buyuk trend (1g+4s) yonune ters islem yok.
+    higher_dir = _higher_tf_direction(symbol_analysis)
+    if higher_dir == "MIXED":
+        long_blockers.append("1g/4s celiskili")
+        short_blockers.append("1g/4s celiskili")
+    elif higher_dir == "LONG":
+        short_blockers.append("buyuk trend yukari")
+    elif higher_dir == "SHORT":
+        long_blockers.append("buyuk trend asagi")
+
     long_ready = (
         long_score >= FUTURES_MIN_CONFIDENCE
         and long_score >= short_score + FUTURES_MIN_EDGE
@@ -2725,11 +2785,13 @@ def _futures_plan_line(symbol: str, signal: FuturesSignal) -> str | None:
         return None
     rr_text = "?" if signal.rr is None else f"1:{signal.rr:.1f}"
     entry_label = "Tetik" if signal.needs_trigger else "Giriş"
+    advice = _futures_management_advice(signal)
     if not signal.risk_plan:
-        return (
+        base = (
             f"Futures Plan: {entry_label} {_fmt_price(signal.entry)} | "
             f"Hedef {_fmt_price(signal.target)} | Stop {_fmt_price(signal.stop)} | R/R {rr_text}"
         )
+        return base + (f"\nYönetim: {advice}" if advice else "")
 
     risk = signal.risk_plan
     base_asset = _base_asset(symbol)
@@ -2753,6 +2815,7 @@ def _futures_plan_line(symbol: str, signal: FuturesSignal) -> str | None:
             f"Suggested margin: {risk.suggested_margin:.2f} USDT",
             f"Suggested leverage: {risk.suggested_leverage}x",
             f"Risk status: {risk.status.value}" + (f" | {risk.reason}" if risk.reason else ""),
+            *([f"Yönetim: {advice}"] if advice else []),
         ]
     )
 
