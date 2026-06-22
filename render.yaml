@@ -136,6 +136,16 @@ services:
         value: "300"
       - key: WEBSOCKET_RECONNECT_DELAY
         value: "5"
+      - key: TRADING_MODE
+        value: "testnet"
+      - key: BINANCE_TESTNET_API_KEY
+        sync: false
+      - key: BINANCE_TESTNET_API_SECRET
+        sync: false
+      - key: TESTNET_RISK_PCT
+        value: "1.5"
+      - key: TESTNET_LEVERAGE
+        value: "5"
       - key: BTCUSDT_COST
         sync: false
       - key: ETHUSDT_COST

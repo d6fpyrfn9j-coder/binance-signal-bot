@@ -239,6 +239,15 @@ def run_report_loop(state: StreamState, report_interval: int, warmup_seconds: in
         except Exception:
             logging.exception("WebSocket worker report failed")
 
+        # Demo (testnet) auto-trade: opens/manages fake-money positions from the
+        # bot's signals. No-op unless TRADING_MODE=testnet + testnet keys are set.
+        try:
+            from testnet_trader import trade_from_history
+            for event in trade_from_history():
+                logging.info("TESTNET: %s", event)
+        except Exception:
+            logging.exception("Testnet trading step failed")
+
         elapsed = time.monotonic() - started_at
         time.sleep(max(report_interval - elapsed, 5))
 
