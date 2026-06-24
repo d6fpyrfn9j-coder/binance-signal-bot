@@ -32,8 +32,27 @@ LIVE_BASE_URL = "https://fapi.binance.com"
 _QTY_STEP = {"BTCUSDT": 0.001, "ETHUSDT": 0.001}
 
 
+_ACTIVE_MODE: str | None = None  # set per-cycle by trade_from_history when running a mode
+
+
 def _mode() -> str:
-    return os.getenv("TRADING_MODE", "").strip().lower()
+    # When a specific mode is being run (dual-mode cycle), honor it; else read env
+    # (first listed mode wins as the safe default — testnet before live).
+    if _ACTIVE_MODE is not None:
+        return _ACTIVE_MODE
+    return os.getenv("TRADING_MODE", "").strip().lower().split(",")[0].strip()
+
+
+def _enabled_modes() -> list[str]:
+    """Modes to run this cycle. TRADING_MODE may be one mode or a comma list
+    (e.g. 'testnet,live') so demo practice and the real account run side by side."""
+    raw = os.getenv("TRADING_MODE", "").strip().lower()
+    out: list[str] = []
+    for part in raw.split(","):
+        m = part.strip()
+        if m in {"testnet", "live"} and m not in out:
+            out.append(m)
+    return out
 
 
 def _is_live() -> bool:
@@ -62,6 +81,9 @@ def _api_secret() -> str:
 
 
 def _positions_path() -> Path:
+    # Live keeps its own state file so real and demo positions never collide.
+    if _is_live():
+        return Path("live_positions.json")
     return Path(os.getenv("TESTNET_POSITIONS_FILE", "testnet_positions.json"))
 
 
@@ -276,8 +298,30 @@ def _risk_quantity(balance: float, entry: float, stop: float, risk_pct: float,
 
 
 def trade_from_history() -> list[str]:
-    """Bridge: manage open testnet trades, then open any fresh 'AÇ' signal the bot
-    just wrote to its futures signal history. Driven each worker cycle."""
+    """Run trading for each enabled mode this cycle. With TRADING_MODE='testnet,live'
+    the demo (fake money) and the real account run independently, side by side —
+    separate keys, balances, positions; they only share the read-only signal list."""
+    global _ACTIVE_MODE
+    modes = _enabled_modes()
+    if not modes:
+        return []
+    events: list[str] = []
+    for m in modes:
+        _ACTIVE_MODE = m
+        try:
+            label = "REAL" if m == "live" else "DEMO"
+            for e in _trade_one_mode():
+                events.append(f"[{label}] {e}")
+        except Exception:
+            logging.exception("Trading step failed for mode %s", m)
+        finally:
+            _ACTIVE_MODE = None
+    return events
+
+
+def _trade_one_mode() -> list[str]:
+    """Bridge for ONE mode: manage open trades, then open any fresh 'AÇ' signal the
+    bot just wrote to its futures signal history. Uses the active mode's keys/state."""
     if not trading_enabled():
         return []
     risk_pct = float(os.getenv("TESTNET_RISK_PCT", "1.5"))
