@@ -115,6 +115,35 @@ def _market(symbol: str, side: str, quantity: float, reduce_only: bool = False) 
     return _request("POST", "/fapi/v1/order", params, signed=True)
 
 
+def _ensure_isolated(symbol: str) -> None:
+    """Use ISOLATED margin so each position's risk is capped by its own margin
+    (a bad trade can't drain the whole account)."""
+    try:
+        _request("POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": "ISOLATED"}, signed=True)
+    except RuntimeError as exc:
+        if "-4046" not in str(exc):  # -4046 = already isolated, fine
+            logging.warning("Could not set ISOLATED for %s: %s", symbol, exc)
+
+
+def _try_exchange_stops(symbol: str, direction: str, stop: float, target: float) -> bool:
+    """Place exchange-side stop-loss + take-profit so the position is protected even
+    if the worker dies. Works on real Binance; this testnet rejects it (-4120), so we
+    return False and the software manager handles stops instead."""
+    tick = {"BTCUSDT": 0.1, "ETHUSDT": 0.01}.get(symbol, 0.01)
+    sp = round(round(stop / tick) * tick, 8)
+    tp = round(round(target / tick) * tick, 8)
+    close_side = "SELL" if direction == "LONG" else "BUY"
+    try:
+        _request("POST", "/fapi/v1/order", {"symbol": symbol, "side": close_side,
+                 "type": "STOP_MARKET", "stopPrice": sp, "closePosition": "true"}, signed=True)
+        _request("POST", "/fapi/v1/order", {"symbol": symbol, "side": close_side,
+                 "type": "TAKE_PROFIT_MARKET", "stopPrice": tp, "closePosition": "true"}, signed=True)
+        return True
+    except Exception as exc:
+        logging.info("Exchange stops unavailable for %s (software fallback): %s", symbol, str(exc)[-80:])
+        return False
+
+
 # --- software-managed positions ---
 
 def _load() -> dict:
@@ -149,6 +178,7 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
     qty = _round_step(quantity, _QTY_STEP.get(symbol, 0.001))
     if qty <= 0:
         return f"{symbol}: quantity rounds to 0"
+    _ensure_isolated(symbol)
     set_leverage(symbol, leverage)
     side = "BUY" if direction == "LONG" else "SELL"
     try:
@@ -157,13 +187,18 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
         logging.exception("Testnet open failed for %s", symbol)
         return f"{symbol}: open failed: {exc}"
     fill = get_price(symbol)
+    # Try to place real stop-loss + take-profit on the exchange (real protection).
+    # On this testnet it's rejected, so the software manager handles stops instead.
+    exchange_stops = _try_exchange_stops(symbol, direction, stop, target)
     state[symbol] = {
         "direction": direction, "qty": qty, "entry": fill,
         "stop": stop, "target": target, "init_stop": stop,
         "extreme": fill, "opened_at": int(time.time()),
+        "exchange_stops": exchange_stops,
     }
     _save(state)
-    return f"AÇILDI {direction} {qty} {symbol} @ {fill:.2f} | stop {stop:.2f} | hedef {target:.2f}"
+    stop_kind = "birja-stop" if exchange_stops else "proqram-stop"
+    return f"AÇILDI {direction} {qty} {symbol} @ {fill:.2f} | ISOLATED | stop {stop:.2f} ({stop_kind}) | hedef {target:.2f}"
 
 
 def manage_open_positions() -> list[str]:
@@ -176,6 +211,11 @@ def manage_open_positions() -> list[str]:
         try:
             price = get_price(symbol)
         except Exception:
+            continue
+        # On real Binance an exchange stop/TP may have already closed it — clean up.
+        if pos.get("exchange_stops") and abs(get_position_amount(symbol)) <= 0:
+            events.append(f"{symbol} bağlandı (birja stop/hedef)")
+            del state[symbol]; _save(state)
             continue
         d = pos["direction"]; entry = pos["entry"]; stop = pos["stop"]; target = pos["target"]
         risk = abs(entry - pos["init_stop"]) or (entry * 0.005)
