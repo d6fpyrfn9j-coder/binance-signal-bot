@@ -28,21 +28,37 @@ from pathlib import Path
 
 
 TESTNET_BASE_URL = "https://testnet.binancefuture.com"
+LIVE_BASE_URL = "https://fapi.binance.com"
 _QTY_STEP = {"BTCUSDT": 0.001, "ETHUSDT": 0.001}
 
 
+def _mode() -> str:
+    return os.getenv("TRADING_MODE", "").strip().lower()
+
+
+def _is_live() -> bool:
+    return _mode() == "live"
+
+
+def _base_url() -> str:
+    """Real exchange only when TRADING_MODE=live; otherwise the fake-money testnet."""
+    return LIVE_BASE_URL if _is_live() else TESTNET_BASE_URL
+
+
 def trading_enabled() -> bool:
-    if os.getenv("TRADING_MODE", "").strip().lower() != "testnet":
+    if _mode() not in {"testnet", "live"}:
         return False
     return bool(_api_key() and _api_secret())
 
 
 def _api_key() -> str:
-    return (os.getenv("BINANCE_TESTNET_API_KEY") or "").strip()
+    name = "BINANCE_API_KEY" if _is_live() else "BINANCE_TESTNET_API_KEY"
+    return (os.getenv(name) or "").strip()
 
 
 def _api_secret() -> str:
-    return (os.getenv("BINANCE_TESTNET_API_SECRET") or "").strip()
+    name = "BINANCE_API_SECRET" if _is_live() else "BINANCE_TESTNET_API_SECRET"
+    return (os.getenv(name) or "").strip()
 
 
 def _positions_path() -> Path:
@@ -64,7 +80,7 @@ def _request(method: str, path: str, params: dict | None = None, signed: bool = 
         query = f"{query}&signature={signature}"
     else:
         query = urllib.parse.urlencode(params)
-    url = f"{TESTNET_BASE_URL}{path}"
+    url = f"{_base_url()}{path}"
     data = None
     if method == "GET":
         url = f"{url}?{query}" if query else url
@@ -212,10 +228,12 @@ def manage_open_positions() -> list[str]:
             price = get_price(symbol)
         except Exception:
             continue
-        # On real Binance an exchange stop/TP may have already closed it — clean up.
-        if pos.get("exchange_stops") and abs(get_position_amount(symbol)) <= 0:
-            events.append(f"{symbol} bağlandı (birja stop/hedef)")
-            del state[symbol]; _save(state)
+        # Live: the exchange stop/TP runs the exit; software must NOT also manage it
+        # (avoids double-close). Just detect when the exchange closed it, then clean up.
+        if pos.get("exchange_stops"):
+            if abs(get_position_amount(symbol)) <= 0:
+                events.append(f"{symbol} bağlandı (birja stop/hedef)")
+                del state[symbol]; _save(state)
             continue
         d = pos["direction"]; entry = pos["entry"]; stop = pos["stop"]; target = pos["target"]
         risk = abs(entry - pos["init_stop"]) or (entry * 0.005)
@@ -279,6 +297,12 @@ def trade_from_history() -> list[str]:
         return events
 
     balance = get_balance_usdt() or 0.0
+    # Live circuit breaker: if the account dropped below the floor, stop opening new
+    # trades (still manage existing). Set LIVE_MIN_BALANCE>0 to enable.
+    min_balance = float(os.getenv("LIVE_MIN_BALANCE", "0"))
+    if min_balance > 0 and balance < min_balance:
+        events.append(f"⛔ CIRCUIT BREAKER: balans {balance:.2f} < {min_balance:.0f} — yeni trade yox")
+        return events
     now = time.time()
     for rec in records[-25:]:
         if not isinstance(rec, dict) or rec.get("action") != "TRADE" or rec.get("status") != "open":
