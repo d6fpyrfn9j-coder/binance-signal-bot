@@ -239,14 +239,25 @@ def run_report_loop(state: StreamState, report_interval: int, warmup_seconds: in
         except Exception:
             logging.exception("WebSocket worker report failed")
 
-        # Demo (testnet) auto-trade: opens/manages fake-money positions from the
-        # bot's signals. No-op unless TRADING_MODE=testnet + testnet keys are set.
+        # Auto-trade (live and/or demo): opens/manages positions from the bot's
+        # signals. No-op unless TRADING_MODE is set with matching keys. Each event
+        # (open/close/circuit-breaker) is logged AND pushed to Telegram so Emin is
+        # notified the moment a real trade happens — no need to watch Binance.
         try:
             from testnet_trader import trade_from_history
-            for event in trade_from_history():
-                logging.info("TESTNET: %s", event)
+            events = trade_from_history()
+            for event in events:
+                logging.info("TRADE: %s", event)
+            if events:
+                token = "".join((os.getenv("TELEGRAM_BOT_TOKEN") or "").split())
+                chat_id = "".join((os.getenv("TELEGRAM_CHAT_ID") or "").split())
+                if token and chat_id:
+                    try:
+                        send_telegram_message(token, chat_id, "🤖 Trade:\n" + "\n".join(events))
+                    except Exception:
+                        logging.exception("Could not send trade alert to Telegram")
         except Exception:
-            logging.exception("Testnet trading step failed")
+            logging.exception("Auto-trade step failed")
 
         elapsed = time.monotonic() - started_at
         time.sleep(max(report_interval - elapsed, 5))
