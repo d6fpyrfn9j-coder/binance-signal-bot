@@ -297,6 +297,30 @@ def _risk_quantity(balance: float, entry: float, stop: float, risk_pct: float,
     return _round_step(qty, _QTY_STEP.get(symbol, 0.001))
 
 
+def live_permission_check() -> str:
+    """Boot diagnostic: confirm the LIVE key can READ (balance) AND TRADE (set
+    leverage) from this server's IP. Opens NO position — set leverage is just a
+    setting. Used to verify the Binance key's Futures + IP allowlist is correct."""
+    global _ACTIVE_MODE
+    if "live" not in _enabled_modes():
+        return "live mode off — skip"
+    prev = _ACTIVE_MODE
+    _ACTIVE_MODE = "live"
+    try:
+        try:
+            bal = get_balance_usdt()
+        except Exception as exc:
+            return f"READ FAILED (key/IP): {str(exc)[-110:]}"
+        try:
+            lev = int(os.getenv("TESTNET_LEVERAGE", "5"))
+            _request("POST", "/fapi/v1/leverage", {"symbol": "BTCUSDT", "leverage": lev}, signed=True)
+        except Exception as exc:
+            return f"READ ok (balance={bal}) but TRADE BLOCKED: {str(exc)[-110:]}"
+        return f"OK — READ ok (balance={bal}) + TRADE ok — Futures+IP allowlist WORKS"
+    finally:
+        _ACTIVE_MODE = prev
+
+
 def trade_from_history() -> list[str]:
     """Run trading for each enabled mode this cycle. With TRADING_MODE='testnet,live'
     the demo (fake money) and the real account run independently, side by side —

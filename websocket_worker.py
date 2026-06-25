@@ -313,6 +313,11 @@ def main() -> int:
     setup_logging()
     load_env()
     _log_egress_ip()
+    try:
+        from testnet_trader import live_permission_check
+        logging.info("LIVE_PERMCHECK: %s", live_permission_check())
+    except Exception:
+        logging.exception("live permission check failed")
     state = StreamState(ALL_SYMBOLS)
     stream_thread = threading.Thread(
         target=run_stream_loop,
