@@ -153,6 +153,15 @@ def _market(symbol: str, side: str, quantity: float, reduce_only: bool = False) 
     return _request("POST", "/fapi/v1/order", params, signed=True)
 
 
+def _cancel_open_orders(symbol: str) -> None:
+    """Cancel all resting orders for a symbol — clears a leftover reduceOnly stop/TP
+    sibling so it can't fire against a future position."""
+    try:
+        _request("DELETE", "/fapi/v1/allOpenOrders", {"symbol": symbol}, signed=True)
+    except Exception as exc:
+        logging.info("Could not cancel open orders for %s: %s", symbol, str(exc)[-80:])
+
+
 def _ensure_isolated(symbol: str) -> None:
     """Use ISOLATED margin so each position's risk is capped by its own margin
     (a bad trade can't drain the whole account)."""
@@ -163,22 +172,26 @@ def _ensure_isolated(symbol: str) -> None:
             logging.warning("Could not set ISOLATED for %s: %s", symbol, exc)
 
 
-def _try_exchange_stops(symbol: str, direction: str, stop: float, target: float) -> bool:
+def _try_exchange_stops(symbol: str, direction: str, stop: float, target: float, qty: float) -> bool:
     """Place exchange-side stop-loss + take-profit so the position is protected even
-    if the worker dies. Works on real Binance; this testnet rejects it (-4120), so we
-    return False and the software manager handles stops instead."""
+    if the worker dies. Uses reduceOnly + quantity (the form real Binance accepts —
+    closePosition=true is rejected with "use Algo Order API"). MARK_PRICE trigger
+    avoids wick-based false fills. Falls back to software stops if still refused."""
     tick = {"BTCUSDT": 0.1, "ETHUSDT": 0.01}.get(symbol, 0.01)
     sp = round(round(stop / tick) * tick, 8)
     tp = round(round(target / tick) * tick, 8)
+    qty = _round_step(abs(qty), _QTY_STEP.get(symbol, 0.001))
     close_side = "SELL" if direction == "LONG" else "BUY"
     try:
         _request("POST", "/fapi/v1/order", {"symbol": symbol, "side": close_side,
-                 "type": "STOP_MARKET", "stopPrice": sp, "closePosition": "true"}, signed=True)
+                 "type": "STOP_MARKET", "stopPrice": sp, "quantity": qty,
+                 "reduceOnly": "true", "workingType": "MARK_PRICE"}, signed=True)
         _request("POST", "/fapi/v1/order", {"symbol": symbol, "side": close_side,
-                 "type": "TAKE_PROFIT_MARKET", "stopPrice": tp, "closePosition": "true"}, signed=True)
+                 "type": "TAKE_PROFIT_MARKET", "stopPrice": tp, "quantity": qty,
+                 "reduceOnly": "true", "workingType": "MARK_PRICE"}, signed=True)
         return True
     except Exception as exc:
-        logging.info("Exchange stops unavailable for %s (software fallback): %s", symbol, str(exc)[-80:])
+        logging.warning("Exchange stops unavailable for %s (software fallback): %s", symbol, str(exc))
         return False
 
 
@@ -216,6 +229,7 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
     qty = _round_step(quantity, _QTY_STEP.get(symbol, 0.001))
     if qty <= 0:
         return f"{symbol}: quantity rounds to 0"
+    _cancel_open_orders(symbol)  # clean slate — drop any stale stop/TP from a prior trade
     _ensure_isolated(symbol)
     set_leverage(symbol, leverage)
     side = "BUY" if direction == "LONG" else "SELL"
@@ -227,7 +241,7 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
     fill = get_price(symbol)
     # Try to place real stop-loss + take-profit on the exchange (real protection).
     # On this testnet it's rejected, so the software manager handles stops instead.
-    exchange_stops = _try_exchange_stops(symbol, direction, stop, target)
+    exchange_stops = _try_exchange_stops(symbol, direction, stop, target, qty)
     state[symbol] = {
         "direction": direction, "qty": qty, "entry": fill,
         "stop": stop, "target": target, "init_stop": stop,
@@ -254,6 +268,7 @@ def manage_open_positions() -> list[str]:
         # (avoids double-close). Just detect when the exchange closed it, then clean up.
         if pos.get("exchange_stops"):
             if abs(get_position_amount(symbol)) <= 0:
+                _cancel_open_orders(symbol)  # clear the leftover stop/TP sibling
                 events.append(f"{symbol} bağlandı (birja stop/hedef)")
                 del state[symbol]; _save(state)
             continue
