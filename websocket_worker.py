@@ -286,10 +286,33 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _log_egress_ip() -> None:
+    """One-time boot probe: log this worker's outbound IP(s). Binance Futures API
+    keys require an IP allowlist, so these are the addresses to whitelist."""
+    import urllib.request
+
+    ips: set[str] = set()
+    for _ in range(15):
+        for url in ("https://api.ipify.org", "https://checkip.amazonaws.com"):
+            try:
+                with urllib.request.urlopen(url, timeout=8) as r:
+                    ip = r.read().decode("utf-8").strip()
+                    if ip:
+                        ips.add(ip)
+                    break
+            except Exception:
+                continue
+    if ips:
+        logging.info("EGRESS_IP (whitelist these on Binance): %s", ", ".join(sorted(ips)))
+    else:
+        logging.warning("EGRESS_IP probe failed (could not reach an IP echo service)")
+
+
 def main() -> int:
     args = parse_args()
     setup_logging()
     load_env()
+    _log_egress_ip()
     state = StreamState(ALL_SYMBOLS)
     stream_thread = threading.Thread(
         target=run_stream_loop,
