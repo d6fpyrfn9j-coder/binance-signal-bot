@@ -1211,11 +1211,14 @@ def _day_trade_levels(symbol_analysis: SymbolAnalysis) -> tuple[float, float, fl
 
 
 def _day_trade_risk_pct(symbol: str) -> float:
+    # Wider stops so normal noise / stop-hunts don't shake us out before the move.
+    # Paired with software trailing (winners run) so the wider risk is offset by
+    # open-ended reward. Per-trade $ risk stays fixed (position size auto-shrinks).
     if symbol == "BTCUSDT":
-        return 0.008
+        return 0.015
     if symbol in {"ETHUSDT", "SOLUSDT"}:
-        return 0.012
-    return 0.018
+        return 0.020
+    return 0.028
 
 
 def _day_trade_target(entry: float, levels: list[float], risk_pct: float) -> float:
@@ -1227,7 +1230,7 @@ def _day_trade_target(entry: float, levels: list[float], risk_pct: float) -> flo
 
 
 def _day_trade_stop(entry: float, support: float, risk_pct: float) -> float:
-    support_stop = support * 0.996
+    support_stop = support * 0.992  # sit further below support, out of the hunt zone
     max_loss_stop = entry * (1 - risk_pct)
     stop = max(support_stop, max_loss_stop)
     if stop >= entry:
@@ -2099,7 +2102,7 @@ def _day_trade_short_target(entry: float, levels: list[float], risk_pct: float) 
 
 
 def _day_trade_short_stop(entry: float, resistance: float, risk_pct: float) -> float:
-    resistance_stop = resistance * 1.004
+    resistance_stop = resistance * 1.008  # sit further above resistance, out of the hunt zone
     max_loss_stop = entry * (1 + risk_pct)
     stop = min(resistance_stop, max_loss_stop)
     if stop <= entry:

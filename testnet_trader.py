@@ -195,6 +195,24 @@ def _try_exchange_stops(symbol: str, direction: str, stop: float, target: float,
         return False
 
 
+def _place_exchange_stop(symbol: str, direction: str, stop: float, qty: float) -> bool:
+    """Place ONE reduceOnly STOP_MARKET as a catastrophe backstop (no take-profit, so
+    the position can ride). Software trailing handles the real exit while the worker
+    is alive; this only fires if the worker dies. Returns True if it landed."""
+    tick = {"BTCUSDT": 0.1, "ETHUSDT": 0.01}.get(symbol, 0.01)
+    sp = round(round(stop / tick) * tick, 8)
+    qty = _round_step(abs(qty), _QTY_STEP.get(symbol, 0.001))
+    close_side = "SELL" if direction == "LONG" else "BUY"
+    try:
+        _request("POST", "/fapi/v1/order", {"symbol": symbol, "side": close_side,
+                 "type": "STOP_MARKET", "stopPrice": sp, "quantity": qty,
+                 "reduceOnly": "true", "workingType": "MARK_PRICE"}, signed=True)
+        return True
+    except Exception as exc:
+        logging.warning("Backstop stop unavailable for %s (software-only): %s", symbol, str(exc))
+        return False
+
+
 # --- software-managed positions ---
 
 def _load() -> dict:
@@ -239,40 +257,42 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
         logging.exception("Testnet open failed for %s", symbol)
         return f"{symbol}: open failed: {exc}"
     fill = get_price(symbol)
-    # Try to place real stop-loss + take-profit on the exchange (real protection).
-    # On this testnet it's rejected, so the software manager handles stops instead.
-    exchange_stops = _try_exchange_stops(symbol, direction, stop, target, qty)
+    # Live: place a WIDE exchange backstop (fires only if the worker dies) but NO fixed
+    # take-profit — software trailing rides the move and exits. Testnet keeps pure
+    # software management. Either way there is no hard target: winners run.
+    backstop = _place_exchange_stop(symbol, direction, stop, qty) if _is_live() else False
     state[symbol] = {
         "direction": direction, "qty": qty, "entry": fill,
         "stop": stop, "target": target, "init_stop": stop,
         "extreme": fill, "opened_at": int(time.time()),
-        "exchange_stops": exchange_stops,
+        "backstop": backstop,
     }
     _save(state)
-    stop_kind = "birja-stop" if exchange_stops else "proqram-stop"
-    return f"AÇILDI {direction} {qty} {symbol} @ {fill:.2f} | ISOLATED | stop {stop:.2f} ({stop_kind}) | hedef {target:.2f}"
+    kind = "birja-backstop + trailing" if backstop else "proqram-trailing"
+    return f"AÇILDI {direction} {qty} {symbol} @ {fill:.2f} | ISOLATED | stop {stop:.2f} ({kind}) | trailing AÇIQ"
 
 
 def manage_open_positions() -> list[str]:
-    """Each cycle: apply break-even + trailing, and close positions that hit stop/target."""
+    """Each cycle: ride winners with a trailing stop (break-even at +1R, then trail 1R
+    behind the best price) and close ONLY when that trailing stop is hit — no fixed
+    target, so winners run. Live positions also carry a wide exchange backstop that
+    fires only if the worker dies."""
     if not trading_enabled():
         return []
     state = _load()
     events: list[str] = []
     for symbol, pos in list(state.items()):
+        # If a live backstop already closed the position (worker was down), clean up.
+        if pos.get("backstop") and abs(get_position_amount(symbol)) <= 0:
+            _cancel_open_orders(symbol)
+            events.append(f"{symbol} BAĞLANDI (birja backstop 🔴)")
+            del state[symbol]; _save(state)
+            continue
         try:
             price = get_price(symbol)
         except Exception:
             continue
-        # Live: the exchange stop/TP runs the exit; software must NOT also manage it
-        # (avoids double-close). Just detect when the exchange closed it, then clean up.
-        if pos.get("exchange_stops"):
-            if abs(get_position_amount(symbol)) <= 0:
-                _cancel_open_orders(symbol)  # clear the leftover stop/TP sibling
-                events.append(f"{symbol} bağlandı (birja stop/hedef)")
-                del state[symbol]; _save(state)
-            continue
-        d = pos["direction"]; entry = pos["entry"]; stop = pos["stop"]; target = pos["target"]
+        d = pos["direction"]; entry = pos["entry"]; stop = pos["stop"]
         risk = abs(entry - pos["init_stop"]) or (entry * 0.005)
         long = d == "LONG"
         # track best price reached
@@ -287,15 +307,18 @@ def manage_open_positions() -> list[str]:
             stop = max(stop, trail) if long else min(stop, trail)
         pos["stop"] = stop
         hit_stop = price <= stop if long else price >= stop
-        hit_target = price >= target if long else price <= target
-        if hit_stop or hit_target:
+        if hit_stop:
             try:
                 _market(symbol, "SELL" if long else "BUY", pos["qty"], reduce_only=True)
             except Exception as exc:
                 events.append(f"{symbol}: bağlama xətası {exc}")
+                _save(state)
                 continue
-            pnl = profit * pos["qty"] if (hit_target or stop >= entry if long else stop <= entry) else -risk * pos["qty"]
-            why = "HEDEF ✅" if hit_target else ("BREAK-EVEN/TRAILING 🟡" if (stop >= entry if long else stop <= entry) else "STOP 🔴")
+            if pos.get("backstop"):
+                _cancel_open_orders(symbol)  # remove the resting exchange backstop
+            locked = (stop >= entry) if long else (stop <= entry)
+            pnl = profit * pos["qty"]
+            why = "TRAILING/BREAK-EVEN 🟢" if locked else "STOP 🔴"
             events.append(f"{symbol} BAĞLANDI {why} @ {price:.2f} | P&L ~{pnl:+.2f} USDT")
             del state[symbol]
         _save(state)
