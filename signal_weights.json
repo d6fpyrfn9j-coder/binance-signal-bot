@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-26T12:01:43.386773+00:00",
+  "generated_at": "2026-06-27T10:34:58.345018+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -15,50 +15,50 @@
     "FETUSDT"
   ],
   "optimized": {
-    "min_entry_confidence": 55,
-    "min_entry_rr": 3.0
+    "min_entry_confidence": 65,
+    "min_entry_rr": 2.0
   },
   "metrics": {
-    "trades": 8,
+    "trades": 12,
     "wins": 0,
     "losses": 0,
     "win_rate": 0.0,
-    "avg_return_pct": -0.14539441996978344,
-    "total_return_pct": -1.0177609397884841,
-    "max_loss_pct": -0.6485000404301755,
-    "missed": 20,
-    "protected": 2001
+    "avg_return_pct": -0.02848948544050156,
+    "total_return_pct": -0.2848948544050156,
+    "max_loss_pct": -0.9301408358120603,
+    "missed": 16,
+    "protected": 2011
   },
   "symbols": {
     "BNBUSDT": {
       "confidence_adjustment": -4,
-      "trades": 6,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": 0.0,
-      "missed": 0,
-      "protected": 103,
-      "note": "koruma baskın, temkinli 🔴"
-    },
-    "BTCUSDT": {
-      "confidence_adjustment": -4,
-      "trades": 0,
+      "trades": 2,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 187,
+      "protected": 104,
       "note": "koruma baskın, temkinli 🔴"
     },
-    "ETHUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 1,
+    "BTCUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 2,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 3,
-      "protected": 176,
-      "note": "Fırsat radarı 🟡"
+      "missed": 0,
+      "protected": 197,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "ETHUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 2,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 1,
+      "protected": 180,
+      "note": "koruma baskın, temkinli 🔴"
     },
     "FETUSDT": {
       "confidence_adjustment": 6,
@@ -66,57 +66,57 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 3,
-      "protected": 272,
+      "missed": 4,
+      "protected": 271,
       "note": "Fırsat radarı 🟡"
     },
     "LINKUSDT": {
       "confidence_adjustment": -4,
-      "trades": 0,
+      "trades": 1,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 153,
+      "protected": 158,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 0,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": 0.0,
-      "missed": 5,
-      "protected": 284,
-      "note": "Fırsat radarı 🟡"
-    },
-    "ONDOUSDT": {
       "confidence_adjustment": 6,
       "trades": 1,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 4,
-      "protected": 267,
+      "protected": 280,
       "note": "Fırsat radarı 🟡"
     },
-    "SOLUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 0,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": 0.0,
-      "missed": 3,
-      "protected": 214,
-      "note": "Fırsat radarı 🟡"
-    },
-    "SUIUSDT": {
+    "ONDOUSDT": {
       "confidence_adjustment": -4,
       "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 1,
+      "missed": 2,
+      "protected": 255,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "SOLUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 3,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 2,
+      "protected": 218,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "SUIUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 1,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 2,
       "protected": 207,
       "note": "koruma baskın, temkinli 🔴"
     },
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 138,
+      "protected": 141,
       "note": "koruma baskın, temkinli 🔴"
     }
   }
