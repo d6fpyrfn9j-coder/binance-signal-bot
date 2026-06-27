@@ -260,7 +260,15 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
     # Live: place a WIDE exchange backstop (fires only if the worker dies) but NO fixed
     # take-profit — software trailing rides the move and exits. Testnet keeps pure
     # software management. Either way there is no hard target: winners run.
-    backstop = _place_exchange_stop(symbol, direction, stop, qty) if _is_live() else False
+    backstop = False
+    if _is_live():
+        # Wait for the position to register so the reduceOnly backstop isn't rejected
+        # (-2022) by a race with the just-filled market order.
+        for _ in range(6):
+            if abs(get_position_amount(symbol)) > 0:
+                break
+            time.sleep(0.5)
+        backstop = _place_exchange_stop(symbol, direction, stop, qty)
     state[symbol] = {
         "direction": direction, "qty": qty, "entry": fill,
         "stop": stop, "target": target, "init_stop": stop,
@@ -282,10 +290,16 @@ def manage_open_positions() -> list[str]:
     state = _load()
     events: list[str] = []
     for symbol, pos in list(state.items()):
-        # If a live backstop already closed the position (worker was down), clean up.
-        if pos.get("backstop") and abs(get_position_amount(symbol)) <= 0:
+        # Reconcile with the exchange FIRST: if the position is already gone (closed by
+        # the backstop, a stop, manually, or anything), drop it from our state instead
+        # of trying to re-close it — which throws -2022 and would loop / spam Telegram.
+        try:
+            amt = get_position_amount(symbol)
+        except Exception:
+            continue
+        if abs(amt) <= 0:
             _cancel_open_orders(symbol)
-            events.append(f"{symbol} BAĞLANDI (birja backstop 🔴)")
+            events.append(f"{symbol} BAĞLANDI (birjada qapandı)")
             del state[symbol]; _save(state)
             continue
         try:
@@ -311,6 +325,13 @@ def manage_open_positions() -> list[str]:
             try:
                 _market(symbol, "SELL" if long else "BUY", pos["qty"], reduce_only=True)
             except Exception as exc:
+                # -2022 = ReduceOnly rejected = the position is already gone. Treat as
+                # closed and clean up (don't loop / spam).
+                if "-2022" in str(exc):
+                    _cancel_open_orders(symbol)
+                    events.append(f"{symbol} BAĞLANDI (artıq qapalı idi)")
+                    del state[symbol]; _save(state)
+                    continue
                 events.append(f"{symbol}: bağlama xətası {exc}")
                 _save(state)
                 continue
