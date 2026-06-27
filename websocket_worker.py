@@ -228,7 +228,24 @@ def send_report_from_stream(state: StreamState) -> str:
     return report
 
 
-def run_report_loop(state: StreamState, report_interval: int, warmup_seconds: int) -> None:
+def _emit_trade_events(events: list[str]) -> None:
+    """Log auto-trade events and push them to Telegram so Emin is notified the moment
+    a real trade opens/closes — no need to watch Binance."""
+    if not events:
+        return
+    for event in events:
+        logging.info("TRADE: %s", event)
+    token = "".join((os.getenv("TELEGRAM_BOT_TOKEN") or "").split())
+    chat_id = "".join((os.getenv("TELEGRAM_CHAT_ID") or "").split())
+    if token and chat_id:
+        try:
+            send_telegram_message(token, chat_id, "🤖 Trade:\n" + "\n".join(events))
+        except Exception:
+            logging.exception("Could not send trade alert to Telegram")
+
+
+def run_report_loop(state: StreamState, report_interval: int, warmup_seconds: int,
+                    manage_interval: int = 30) -> None:
     logging.info("Worker warmup: %ss", warmup_seconds)
     time.sleep(max(warmup_seconds, 0))
     while True:
@@ -239,28 +256,26 @@ def run_report_loop(state: StreamState, report_interval: int, warmup_seconds: in
         except Exception:
             logging.exception("WebSocket worker report failed")
 
-        # Auto-trade (live and/or demo): opens/manages positions from the bot's
-        # signals. No-op unless TRADING_MODE is set with matching keys. Each event
-        # (open/close/circuit-breaker) is logged AND pushed to Telegram so Emin is
-        # notified the moment a real trade happens — no need to watch Binance.
+        # Open new trades from the fresh report (and manage existing ones once).
         try:
             from testnet_trader import trade_from_history
-            events = trade_from_history()
-            for event in events:
-                logging.info("TRADE: %s", event)
-            if events:
-                token = "".join((os.getenv("TELEGRAM_BOT_TOKEN") or "").split())
-                chat_id = "".join((os.getenv("TELEGRAM_CHAT_ID") or "").split())
-                if token and chat_id:
-                    try:
-                        send_telegram_message(token, chat_id, "🤖 Trade:\n" + "\n".join(events))
-                    except Exception:
-                        logging.exception("Could not send trade alert to Telegram")
+            _emit_trade_events(trade_from_history())
         except Exception:
             logging.exception("Auto-trade step failed")
 
-        elapsed = time.monotonic() - started_at
-        time.sleep(max(report_interval - elapsed, 5))
+        # Until the next report, check open positions every ~manage_interval seconds so
+        # software stops / trailing react fast (≈30s) instead of waiting a full cycle.
+        # Single-threaded on purpose: no race on the positions state file.
+        while time.monotonic() - started_at < report_interval:
+            remaining = report_interval - (time.monotonic() - started_at)
+            time.sleep(min(manage_interval, max(remaining, 1)))
+            if time.monotonic() - started_at >= report_interval:
+                break
+            try:
+                from testnet_trader import manage_all
+                _emit_trade_events(manage_all())
+            except Exception:
+                logging.exception("Fast manage step failed")
 
 
 def parse_args() -> argparse.Namespace:

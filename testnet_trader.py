@@ -380,6 +380,27 @@ def live_permission_check() -> str:
         _ACTIVE_MODE = prev
 
 
+def manage_all() -> list[str]:
+    """Manage open positions for every enabled mode WITHOUT opening anything new.
+    Used by the fast (≈30s) stop/trailing loop between reports."""
+    global _ACTIVE_MODE
+    modes = _enabled_modes()
+    if not modes:
+        return []
+    events: list[str] = []
+    for m in modes:
+        _ACTIVE_MODE = m
+        try:
+            label = "REAL" if m == "live" else "DEMO"
+            for e in manage_open_positions():
+                events.append(f"[{label}] {e}")
+        except Exception:
+            logging.exception("Manage step failed for mode %s", m)
+        finally:
+            _ACTIVE_MODE = None
+    return events
+
+
 def trade_from_history() -> list[str]:
     """Run trading for each enabled mode this cycle. With TRADING_MODE='testnet,live'
     the demo (fake money) and the real account run independently, side by side —
