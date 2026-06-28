@@ -281,10 +281,10 @@ def execute_signal(symbol: str, direction: str, entry: float, stop: float, targe
 
 
 def manage_open_positions() -> list[str]:
-    """Each cycle: ride winners with a trailing stop (break-even at +1R, then trail 1R
-    behind the best price) and close ONLY when that trailing stop is hit — no fixed
-    target, so winners run. Live positions also carry a wide exchange backstop that
-    fires only if the worker dies."""
+    """Each cycle: lock profit early (at +0.5R move stop just past entry) so a winner
+    can't slide back to a loss, then from +1R trail 0.5R behind the best price and
+    close only when that trailing stop is hit — no fixed target, winners still run.
+    Live positions also carry a wide exchange backstop that fires only if worker dies."""
     if not trading_enabled():
         return []
     state = _load()
@@ -312,12 +312,14 @@ def manage_open_positions() -> list[str]:
         # track best price reached
         pos["extreme"] = max(pos["extreme"], price) if long else min(pos["extreme"], price)
         profit = (price - entry) if long else (entry - price)
-        # break-even: at +1R move stop to entry
-        if profit >= risk:
-            stop = max(stop, entry) if long else min(stop, entry)
-        # trailing: once +1.5R, trail stop 1R behind the best price
-        if profit >= 1.5 * risk:
-            trail = pos["extreme"] - risk if long else pos["extreme"] + risk
+        # lock profit EARLY: at +0.5R move stop just past entry (small profit that also
+        # covers fees) so a winner can't slide back into a loss — the issue Emin saw.
+        if profit >= 0.5 * risk:
+            lock = entry + 0.15 * risk if long else entry - 0.15 * risk
+            stop = max(stop, lock) if long else min(stop, lock)
+        # trailing: from +1R, trail the stop 0.5R behind the best price (give back less)
+        if profit >= 1.0 * risk:
+            trail = pos["extreme"] - 0.5 * risk if long else pos["extreme"] + 0.5 * risk
             stop = max(stop, trail) if long else min(stop, trail)
         pos["stop"] = stop
         hit_stop = price <= stop if long else price >= stop
