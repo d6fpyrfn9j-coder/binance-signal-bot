@@ -212,6 +212,61 @@ def run_stream_loop(state: StreamState, symbols: tuple[str, ...], reconnect_dela
         time.sleep(reconnect_delay)
 
 
+# Turkish report labels -> Azerbaijani (phrases first so partial words aren't mangled).
+_AZ_MAP: list[tuple[str, str]] = [
+    ("KRIPTO RAPORU", "KRİPTO HESABATI"), ("PİYASA MODU", "BAZAR REJİMİ"),
+    ("Piyasa Rejimi", "Bazar Rejimi"), ("Futures Yön", "Futures İstiqamət"),
+    ("Anlık Net Akış", "Anlıq Net Axın"), ("Borsa teyidi", "Birja təsdiqi"),
+    ("Büyük emir", "Böyük əmr"), ("alış duvarı", "alış divarı"),
+    ("satış duvarı", "satış divarı"), ("alıcı baskısı", "alıcı təzyiqi"),
+    ("satıcı baskısı", "satıcı təzyiqi"), ("para girişi", "pul girişi"),
+    ("para çıkışı", "pul çıxışı"), ("trend ve akış", "trend və axın"),
+    ("teyidi zayıf", "təsdiqi zəif"), ("veri birikiyor", "data yığılır"),
+    ("büyük risk yok", "böyük risk yox"), ("yön modu", "istiqamət rejimi"),
+    ("tetik bekle", "tetik gözlə"), ("tetikten sonra", "tetikdən sonra"),
+    ("Beklenti", "Gözlənti"), ("Kaldıraç", "Lvereç"), ("Uyarı", "Xəbərdarlıq"),
+    ("Haber", "Xəbər"), ("Tarih", "Tarix"), ("Sürüm", "Versiya"), ("Hesap", "Hesab"),
+    ("Fiyat", "Qiymət"), ("İşlem", "Əməliyyat"), ("Güven", "Güvən"),
+    ("eğilim", "meyl"), ("kararsız", "qərarsız"), ("Borsa", "Birja"),
+    ("teyit", "təsdiq"), ("hacim", "həcm"), ("zayıf", "zəif"),
+    ("Para:", "Pul:"), ("BEKLE", "GÖZLƏ"), ("celiskili", "ziddiyyətli"),
+    ("çelişkili", "ziddiyyətli"), ("temkinli", "ehtiyatlı"), ("guclu", "güclü"),
+    ("altinda", "altında"), ("buyuk", "böyük"), ("asagi", "aşağı"),
+    ("yukari", "yuxarı"), ("egim", "əyim"),
+]
+
+
+def _to_az(text: str) -> str:
+    for tr, az in _AZ_MAP:
+        text = text.replace(tr, az)
+    return text
+
+
+_LAST_SENT_PRICE: dict[str, float] = {}
+
+
+def _moved_enough(scan: MarketScan) -> bool:
+    """True if any symbol moved >= REPORT_MOVE_PCT since the last SENT report. Futures
+    needs movement (up or down); in a flat/calm market there's nothing to act on, so
+    stay quiet instead of pinging every cycle."""
+    threshold = float(os.getenv("REPORT_MOVE_PCT", "0.5"))
+    for symbol, stat in (scan.flow_stats or {}).items():
+        price = float(getattr(stat, "last_price", 0) or 0)
+        if price <= 0:
+            continue
+        prev = _LAST_SENT_PRICE.get(symbol)
+        if prev is None or abs(price - prev) / prev * 100.0 >= threshold:
+            return True
+    return False
+
+
+def _remember_prices(scan: MarketScan) -> None:
+    for symbol, stat in (scan.flow_stats or {}).items():
+        price = float(getattr(stat, "last_price", 0) or 0)
+        if price > 0:
+            _LAST_SENT_PRICE[symbol] = price
+
+
 def send_report_from_stream(state: StreamState) -> str:
     scan, stats = state.snapshot_and_reset()
     logging.info(
@@ -219,12 +274,17 @@ def send_report_from_stream(state: StreamState) -> str:
         stats.trade_messages,
         stats.depth_messages,
     )
-    report = create_report(scan=scan)
+    report = _to_az(create_report(scan=scan))
+    # Quiet in calm markets: only send when something actually moved.
+    if not _moved_enough(scan):
+        logging.info("Calm market — report not sent (no move >= REPORT_MOVE_PCT)")
+        return report
     token = "".join((os.getenv("TELEGRAM_BOT_TOKEN") or "").split())
     chat_id = "".join((os.getenv("TELEGRAM_CHAT_ID") or "").split())
     if not token or not chat_id:
         raise RuntimeError("TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ayarlanmali")
     send_telegram_message(token, chat_id, report)
+    _remember_prices(scan)
     return report
 
 
