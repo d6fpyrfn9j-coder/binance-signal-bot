@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-22T06:04:14.150852+00:00",
+  "generated_at": "2026-07-23T06:09:32.219154+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -19,15 +19,15 @@
     "min_entry_rr": 2.0
   },
   "metrics": {
-    "trades": 21,
+    "trades": 20,
     "wins": 1,
     "losses": 0,
     "win_rate": 100.0,
-    "avg_return_pct": 0.35924838365137635,
-    "total_return_pct": 7.184967673027527,
+    "avg_return_pct": 0.3448469856702443,
+    "total_return_pct": 6.5520927277346415,
     "max_loss_pct": -1.4840027229407806,
     "missed": 8,
-    "protected": 1260
+    "protected": 1213
   },
   "symbols": {
     "BNBUSDT": {
@@ -37,7 +37,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 43,
+      "protected": 40,
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
@@ -47,17 +47,17 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 142,
+      "protected": 138,
       "note": "koruma baskın, temkinli 🔴"
     },
     "ETHUSDT": {
       "confidence_adjustment": 6,
-      "trades": 6,
+      "trades": 5,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 129,
+      "protected": 122,
       "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
@@ -67,7 +67,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 146,
+      "protected": 140,
       "note": "koruma baskın, temkinli 🔴"
     },
     "LINKUSDT": {
@@ -77,7 +77,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 91,
+      "protected": 84,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
@@ -87,7 +87,7 @@
       "losses": 0,
       "win_rate": 100.0,
       "missed": 0,
-      "protected": 187,
+      "protected": 182,
       "note": ""
     },
     "ONDOUSDT": {
@@ -97,7 +97,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 169,
+      "protected": 168,
       "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
@@ -107,7 +107,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 170,
+      "protected": 165,
       "note": "koruma baskın, temkinli 🔴"
     },
     "SUIUSDT": {
@@ -117,7 +117,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 107,
+      "protected": 102,
       "note": "koruma baskın, temkinli 🔴"
     },
     "XRPUSDT": {
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 76,
+      "protected": 72,
       "note": "koruma baskın, temkinli 🔴"
     }
   }
