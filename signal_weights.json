@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-23T06:09:32.219154+00:00",
+  "generated_at": "2026-07-24T06:03:39.884372+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -37,7 +37,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 40,
+      "protected": 37,
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
@@ -47,7 +47,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 138,
+      "protected": 142,
       "note": "koruma baskın, temkinli 🔴"
     },
     "ETHUSDT": {
@@ -57,7 +57,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 122,
+      "protected": 125,
       "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
@@ -67,7 +67,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 140,
+      "protected": 136,
       "note": "koruma baskın, temkinli 🔴"
     },
     "LINKUSDT": {
@@ -87,7 +87,7 @@
       "losses": 0,
       "win_rate": 100.0,
       "missed": 0,
-      "protected": 182,
+      "protected": 177,
       "note": ""
     },
     "ONDOUSDT": {
@@ -97,7 +97,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 168,
+      "protected": 171,
       "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 72,
+      "protected": 74,
       "note": "koruma baskın, temkinli 🔴"
     }
   }
