@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-05T06:04:36.373866+00:00",
+  "generated_at": "2026-08-06T06:05:58.776270+00:00",
   "version": 1,
   "source_files": {
     "backtest": "backtest_results.json",
@@ -14,7 +14,7 @@
     "min_decisive_samples": 3.0,
     "unknown_regime_prior_weight": 0.35
   },
-  "events_used": 238,
+  "events_used": 243,
   "components": [
     "rsi",
     "ema_trend",
@@ -54,14 +54,14 @@
           "new_weight": 1.7623
         },
         "ema_trend": {
-          "samples": 39.55,
-          "wins": 39.55,
+          "samples": 40.07,
+          "wins": 40.07,
           "losses": 0.0,
           "win_rate": 100.0,
-          "win_contribution": 94.17,
+          "win_contribution": 94.24,
           "loss_contribution": 0.0,
           "profit_factor_contribution": null,
-          "gross_profit": 3.955,
+          "gross_profit": 4.0075,
           "gross_loss": 0.0,
           "previous_weight": 3.0,
           "new_weight": 3.0
@@ -84,7 +84,7 @@
           "wins": 2.45,
           "losses": 0.0,
           "win_rate": 100.0,
-          "win_contribution": 5.83,
+          "win_contribution": 5.76,
           "loss_contribution": 0.0,
           "profit_factor_contribution": null,
           "gross_profit": 0.245,
@@ -294,10 +294,10 @@
     "RANGE": {
       "weights": {
         "rsi": 1.7623,
-        "ema_trend": 0.4678,
+        "ema_trend": 0.4545,
         "macd": 1.0,
-        "volume": 0.4366,
-        "market_regime": 0.39,
+        "volume": 0.4242,
+        "market_regime": 0.3789,
         "open_interest": 1.0,
         "funding_rate": 1.0,
         "long_short_ratio": 1.0,
@@ -318,17 +318,17 @@
           "new_weight": 1.7623
         },
         "ema_trend": {
-          "samples": 91.0,
+          "samples": 92.0,
           "wins": 42.0,
-          "losses": 49.0,
-          "win_rate": 46.15,
+          "losses": 50.0,
+          "win_rate": 45.65,
           "win_contribution": 33.33,
           "loss_contribution": 33.33,
-          "profit_factor_contribution": 0.8324,
-          "gross_profit": 31.7933,
-          "gross_loss": 38.1969,
-          "previous_weight": 0.4804,
-          "new_weight": 0.4678
+          "profit_factor_contribution": 0.8212,
+          "gross_profit": 31.369,
+          "gross_loss": 38.1991,
+          "previous_weight": 0.4678,
+          "new_weight": 0.4545
         },
         "macd": {
           "samples": 0.0,
@@ -344,30 +344,30 @@
           "new_weight": 1.0
         },
         "volume": {
-          "samples": 91.0,
+          "samples": 92.0,
           "wins": 42.0,
-          "losses": 49.0,
-          "win_rate": 46.15,
+          "losses": 50.0,
+          "win_rate": 45.65,
           "win_contribution": 33.33,
           "loss_contribution": 33.33,
-          "profit_factor_contribution": 0.8324,
-          "gross_profit": 31.7933,
-          "gross_loss": 38.1969,
-          "previous_weight": 0.4484,
-          "new_weight": 0.4366
+          "profit_factor_contribution": 0.8212,
+          "gross_profit": 31.369,
+          "gross_loss": 38.1991,
+          "previous_weight": 0.4366,
+          "new_weight": 0.4242
         },
         "market_regime": {
-          "samples": 91.0,
+          "samples": 92.0,
           "wins": 42.0,
-          "losses": 49.0,
-          "win_rate": 46.15,
+          "losses": 50.0,
+          "win_rate": 45.65,
           "win_contribution": 33.33,
           "loss_contribution": 33.33,
-          "profit_factor_contribution": 0.8324,
-          "gross_profit": 31.7933,
-          "gross_loss": 38.1969,
-          "previous_weight": 0.4005,
-          "new_weight": 0.39
+          "profit_factor_contribution": 0.8212,
+          "gross_profit": 31.369,
+          "gross_loss": 38.1991,
+          "previous_weight": 0.39,
+          "new_weight": 0.3789
         },
         "open_interest": {
           "samples": 0.0,
@@ -450,14 +450,14 @@
           "new_weight": 1.7623
         },
         "ema_trend": {
-          "samples": 39.55,
-          "wins": 39.55,
+          "samples": 40.07,
+          "wins": 40.07,
           "losses": 0.0,
           "win_rate": 100.0,
-          "win_contribution": 94.17,
+          "win_contribution": 94.24,
           "loss_contribution": 0.0,
           "profit_factor_contribution": null,
-          "gross_profit": 3.955,
+          "gross_profit": 4.0075,
           "gross_loss": 0.0,
           "previous_weight": 3.0,
           "new_weight": 3.0
@@ -480,7 +480,7 @@
           "wins": 2.45,
           "losses": 0.0,
           "win_rate": 100.0,
-          "win_contribution": 5.83,
+          "win_contribution": 5.76,
           "loss_contribution": 0.0,
           "profit_factor_contribution": null,
           "gross_profit": 0.245,
