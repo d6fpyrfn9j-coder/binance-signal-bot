@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-20T03:57:48.868219+00:00",
+  "generated_at": "2026-08-21T03:59:53.836778+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -26,8 +26,8 @@
     "avg_return_pct": 0.07800340827031667,
     "total_return_pct": 0.6240272661625333,
     "max_loss_pct": -0.9184194819147652,
-    "missed": 22,
-    "protected": 812
+    "missed": 27,
+    "protected": 830
   },
   "symbols": {
     "BNBUSDT": {
@@ -41,14 +41,14 @@
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
-      "confidence_adjustment": -4,
+      "confidence_adjustment": 6,
       "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 2,
-      "protected": 90,
-      "note": "koruma baskın, temkinli 🔴"
+      "missed": 4,
+      "protected": 93,
+      "note": "Fırsat radarı 🟡"
     },
     "ETHUSDT": {
       "confidence_adjustment": 6,
@@ -57,7 +57,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 4,
-      "protected": 72,
+      "protected": 76,
       "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
@@ -66,8 +66,8 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 0,
-      "protected": 110,
+      "missed": 1,
+      "protected": 114,
       "note": "koruma baskın, temkinli 🔴"
     },
     "LINKUSDT": {
@@ -77,7 +77,7 @@
       "losses": 1,
       "win_rate": 0.0,
       "missed": 4,
-      "protected": 62,
+      "protected": 66,
       "note": "Fırsat radarı 🟡"
     },
     "NEARUSDT": {
@@ -87,18 +87,18 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 123,
+      "protected": 122,
       "note": "koruma baskın, temkinli 🔴"
     },
     "ONDOUSDT": {
-      "confidence_adjustment": 6,
+      "confidence_adjustment": -4,
       "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 3,
-      "protected": 162,
-      "note": "Fırsat radarı 🟡"
+      "missed": 1,
+      "protected": 160,
+      "note": "koruma baskın, temkinli 🔴"
     },
     "SOLUSDT": {
       "confidence_adjustment": 6,
@@ -107,7 +107,7 @@
       "losses": 1,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 74,
+      "protected": 76,
       "note": "Fırsat radarı 🟡"
     },
     "SUIUSDT": {
@@ -117,7 +117,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 63,
+      "protected": 64,
       "note": "Fırsat radarı 🟡"
     },
     "XRPUSDT": {
@@ -126,8 +126,8 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 3,
-      "protected": 46,
+      "missed": 7,
+      "protected": 49,
       "note": "Fırsat radarı 🟡"
     }
   }
