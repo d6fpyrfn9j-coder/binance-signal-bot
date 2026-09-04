@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-03T08:02:09.594480+00:00",
+  "generated_at": "2026-09-04T07:58:02.108162+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -16,48 +16,48 @@
   ],
   "optimized": {
     "min_entry_confidence": 55,
-    "min_entry_rr": 1.5
+    "min_entry_rr": 2.5
   },
   "metrics": {
-    "trades": 59,
-    "wins": 6,
-    "losses": 9,
-    "win_rate": 40.0,
-    "avg_return_pct": 0.23340170527603277,
-    "total_return_pct": 11.90348696907767,
-    "max_loss_pct": -2.8000000000000003,
-    "missed": 44,
-    "protected": 1147
+    "trades": 27,
+    "wins": 1,
+    "losses": 4,
+    "win_rate": 20.0,
+    "avg_return_pct": 0.40242709337029453,
+    "total_return_pct": 10.060677334257363,
+    "max_loss_pct": -1.927272727272731,
+    "missed": 57,
+    "protected": 1180
   },
   "symbols": {
     "BNBUSDT": {
-      "confidence_adjustment": 0,
-      "trades": 12,
-      "wins": 1,
-      "losses": 1,
-      "win_rate": 50.0,
-      "missed": 0,
-      "protected": 33,
-      "note": ""
-    },
-    "BTCUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 10,
+      "confidence_adjustment": -4,
+      "trades": 5,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 5,
-      "protected": 101,
+      "missed": 1,
+      "protected": 30,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "BTCUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 1,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 7,
+      "protected": 107,
       "note": "Fırsat radarı 🟡"
     },
     "ETHUSDT": {
       "confidence_adjustment": 6,
-      "trades": 7,
+      "trades": 2,
       "wins": 0,
-      "losses": 2,
+      "losses": 0,
       "win_rate": 0.0,
       "missed": 6,
-      "protected": 95,
+      "protected": 98,
       "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
@@ -67,66 +67,66 @@
       "losses": 1,
       "win_rate": 0.0,
       "missed": 5,
-      "protected": 176,
+      "protected": 180,
       "note": "Fırsat radarı 🟡"
     },
     "LINKUSDT": {
       "confidence_adjustment": 6,
-      "trades": 5,
+      "trades": 6,
       "wins": 0,
       "losses": 1,
       "win_rate": 0.0,
-      "missed": 6,
-      "protected": 89,
+      "missed": 8,
+      "protected": 98,
       "note": "Fırsat radarı 🟡"
     },
     "NEARUSDT": {
       "confidence_adjustment": 6,
-      "trades": 4,
-      "wins": 0,
-      "losses": 1,
-      "win_rate": 0.0,
-      "missed": 3,
-      "protected": 172,
-      "note": "Fırsat radarı 🟡"
-    },
-    "ONDOUSDT": {
-      "confidence_adjustment": -4,
-      "trades": 2,
+      "trades": 1,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 2,
-      "protected": 142,
-      "note": "koruma baskın, temkinli 🔴"
+      "missed": 3,
+      "protected": 175,
+      "note": "Fırsat radarı 🟡"
+    },
+    "ONDOUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 3,
+      "protected": 139,
+      "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
-      "confidence_adjustment": 5,
-      "trades": 14,
-      "wins": 4,
-      "losses": 2,
-      "win_rate": 66.7,
-      "missed": 4,
-      "protected": 104,
-      "note": "geçmiş başarı iyi 🟢"
+      "confidence_adjustment": 6,
+      "trades": 8,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "missed": 7,
+      "protected": 112,
+      "note": "Fırsat radarı 🟡"
     },
     "SUIUSDT": {
       "confidence_adjustment": 6,
-      "trades": 3,
+      "trades": 1,
       "wins": 0,
       "losses": 1,
       "win_rate": 0.0,
       "missed": 5,
-      "protected": 120,
+      "protected": 126,
       "note": "Fırsat radarı 🟡"
     },
     "XRPUSDT": {
       "confidence_adjustment": 8,
-      "trades": 1,
+      "trades": 2,
       "wins": 1,
       "losses": 0,
       "win_rate": 100.0,
-      "missed": 8,
+      "missed": 12,
       "protected": 115,
       "note": "Fırsat radarı 🟡"
     }
