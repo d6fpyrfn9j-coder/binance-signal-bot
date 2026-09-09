@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-08T08:04:18.794885+00:00",
+  "generated_at": "2026-09-09T08:08:14.280132+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -19,7 +19,7 @@
     "min_entry_rr": 1.5
   },
   "metrics": {
-    "trades": 60,
+    "trades": 59,
     "wins": 6,
     "losses": 12,
     "win_rate": 33.33333333333333,
@@ -27,7 +27,7 @@
     "total_return_pct": 14.478444115065702,
     "max_loss_pct": -2.8000000000000003,
     "missed": 51,
-    "protected": 1259
+    "protected": 1300
   },
   "symbols": {
     "BNBUSDT": {
@@ -47,7 +47,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 6,
-      "protected": 113,
+      "protected": 116,
       "note": "Fırsat radarı 🟡"
     },
     "ETHUSDT": {
@@ -57,7 +57,7 @@
       "losses": 2,
       "win_rate": 0.0,
       "missed": 6,
-      "protected": 107,
+      "protected": 108,
       "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
@@ -67,7 +67,7 @@
       "losses": 2,
       "win_rate": 0.0,
       "missed": 5,
-      "protected": 180,
+      "protected": 189,
       "note": "Fırsat radarı 🟡"
     },
     "LINKUSDT": {
@@ -77,7 +77,7 @@
       "losses": 2,
       "win_rate": 0.0,
       "missed": 9,
-      "protected": 102,
+      "protected": 108,
       "note": "Fırsat radarı 🟡"
     },
     "NEARUSDT": {
@@ -87,7 +87,7 @@
       "losses": 1,
       "win_rate": 0.0,
       "missed": 6,
-      "protected": 200,
+      "protected": 205,
       "note": "Fırsat radarı 🟡"
     },
     "ONDOUSDT": {
@@ -97,7 +97,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 2,
-      "protected": 141,
+      "protected": 146,
       "note": "koruma baskın, temkinli 🔴"
     },
     "SOLUSDT": {
@@ -107,17 +107,17 @@
       "losses": 2,
       "win_rate": 66.7,
       "missed": 4,
-      "protected": 125,
+      "protected": 130,
       "note": "geçmiş başarı iyi 🟢"
     },
     "SUIUSDT": {
       "confidence_adjustment": 6,
-      "trades": 6,
+      "trades": 5,
       "wins": 0,
       "losses": 2,
       "win_rate": 0.0,
       "missed": 5,
-      "protected": 138,
+      "protected": 146,
       "note": "Fırsat radarı 🟡"
     },
     "XRPUSDT": {
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 100.0,
       "missed": 8,
-      "protected": 117,
+      "protected": 116,
       "note": "Fırsat radarı 🟡"
     }
   }
