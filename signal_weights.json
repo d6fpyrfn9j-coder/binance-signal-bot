@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-23T08:33:56.415575+00:00",
+  "generated_at": "2026-09-24T08:26:40.307433+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -19,116 +19,116 @@
     "min_entry_rr": 1.5
   },
   "metrics": {
-    "trades": 78,
-    "wins": 7,
-    "losses": 11,
-    "win_rate": 38.88888888888889,
-    "avg_return_pct": 0.5844606292691693,
-    "total_return_pct": 42.66562593664936,
-    "max_loss_pct": -2.8000000000000056,
-    "missed": 27,
-    "protected": 1570
+    "trades": 50,
+    "wins": 4,
+    "losses": 9,
+    "win_rate": 30.76923076923077,
+    "avg_return_pct": 0.4956292681876777,
+    "total_return_pct": 22.798946336633175,
+    "max_loss_pct": -2.8000000000000007,
+    "missed": 30,
+    "protected": 1612
   },
   "symbols": {
     "BNBUSDT": {
       "confidence_adjustment": -4,
-      "trades": 6,
+      "trades": 8,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 50,
+      "protected": 51,
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
-      "confidence_adjustment": -10,
-      "trades": 15,
-      "wins": 1,
-      "losses": 2,
-      "win_rate": 33.3,
-      "missed": 4,
-      "protected": 129,
-      "note": "geçmiş başarı zayıf 🔴"
+      "confidence_adjustment": 6,
+      "trades": 6,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 3,
+      "protected": 135,
+      "note": "Fırsat radarı 🟡"
     },
     "ETHUSDT": {
-      "confidence_adjustment": -14,
-      "trades": 12,
+      "confidence_adjustment": -4,
+      "trades": 8,
       "wins": 0,
-      "losses": 3,
+      "losses": 2,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 125,
+      "protected": 128,
       "note": "koruma baskın, temkinli 🔴"
     },
     "FETUSDT": {
       "confidence_adjustment": 6,
-      "trades": 3,
+      "trades": 1,
       "wins": 0,
-      "losses": 2,
+      "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 237,
+      "protected": 239,
       "note": "Fırsat radarı 🟡"
     },
     "LINKUSDT": {
       "confidence_adjustment": -4,
-      "trades": 9,
+      "trades": 3,
       "wins": 0,
-      "losses": 1,
+      "losses": 0,
       "win_rate": 0.0,
-      "missed": 2,
-      "protected": 135,
+      "missed": 1,
+      "protected": 143,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
-      "confidence_adjustment": 5,
-      "trades": 6,
-      "wins": 2,
-      "losses": 1,
-      "win_rate": 66.7,
-      "missed": 6,
-      "protected": 248,
-      "note": "geçmiş başarı iyi 🟢"
+      "confidence_adjustment": -10,
+      "trades": 5,
+      "wins": 1,
+      "losses": 3,
+      "win_rate": 25.0,
+      "missed": 12,
+      "protected": 257,
+      "note": "geçmiş başarı zayıf 🔴"
     },
     "ONDOUSDT": {
       "confidence_adjustment": 6,
-      "trades": 3,
+      "trades": 1,
       "wins": 0,
       "losses": 1,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 167,
+      "protected": 181,
       "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
-      "confidence_adjustment": 5,
-      "trades": 15,
+      "confidence_adjustment": 0,
+      "trades": 7,
       "wins": 3,
-      "losses": 1,
-      "win_rate": 75.0,
-      "missed": 5,
-      "protected": 153,
-      "note": "geçmiş başarı iyi 🟢"
+      "losses": 2,
+      "win_rate": 60.0,
+      "missed": 1,
+      "protected": 163,
+      "note": ""
     },
     "SUIUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 8,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "missed": 4,
+      "protected": 176,
+      "note": "Fırsat radarı 🟡"
+    },
+    "XRPUSDT": {
       "confidence_adjustment": -4,
-      "trades": 4,
+      "trades": 3,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 2,
-      "protected": 182,
+      "protected": 139,
       "note": "koruma baskın, temkinli 🔴"
-    },
-    "XRPUSDT": {
-      "confidence_adjustment": 0,
-      "trades": 5,
-      "wins": 1,
-      "losses": 0,
-      "win_rate": 100.0,
-      "missed": 1,
-      "protected": 144,
-      "note": ""
     }
   }
 }
