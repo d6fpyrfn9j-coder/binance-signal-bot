@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21T08:33:18.125122+00:00",
+  "generated_at": "2026-10-22T08:35:23.145717+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -15,44 +15,44 @@
     "FETUSDT"
   ],
   "optimized": {
-    "min_entry_confidence": 65,
-    "min_entry_rr": 2.0
+    "min_entry_confidence": 55,
+    "min_entry_rr": 3.0
   },
   "metrics": {
-    "trades": 39,
+    "trades": 18,
     "wins": 0,
-    "losses": 5,
+    "losses": 3,
     "win_rate": 0.0,
-    "avg_return_pct": 0.08343667999081443,
-    "total_return_pct": 3.170593839650948,
-    "max_loss_pct": -1.6797162205740142,
-    "missed": 25,
-    "protected": 1686
+    "avg_return_pct": -0.0077089680772918145,
+    "total_return_pct": -0.13105245731396084,
+    "max_loss_pct": -1.1626671201139138,
+    "missed": 23,
+    "protected": 1669
   },
   "symbols": {
     "BNBUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 0,
+      "protected": 47,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "BTCUSDT": {
       "confidence_adjustment": -4,
       "trades": 1,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 49,
-      "note": "koruma baskın, temkinli 🔴"
-    },
-    "BTCUSDT": {
-      "confidence_adjustment": -4,
-      "trades": 7,
-      "wins": 0,
-      "losses": 2,
-      "win_rate": 0.0,
-      "missed": 0,
-      "protected": 135,
+      "protected": 134,
       "note": "koruma baskın, temkinli 🔴"
     },
     "ETHUSDT": {
       "confidence_adjustment": -4,
-      "trades": 7,
+      "trades": 2,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
@@ -66,58 +66,58 @@
       "wins": 0,
       "losses": 1,
       "win_rate": 0.0,
-      "missed": 5,
+      "missed": 3,
       "protected": 276,
       "note": "Fırsat radarı 🟡"
     },
     "LINKUSDT": {
       "confidence_adjustment": -4,
-      "trades": 6,
+      "trades": 5,
       "wins": 0,
       "losses": 1,
       "win_rate": 0.0,
       "missed": 2,
-      "protected": 144,
+      "protected": 143,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 3,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": 0.0,
-      "missed": 7,
-      "protected": 273,
-      "note": "Fırsat radarı 🟡"
-    },
-    "ONDOUSDT": {
       "confidence_adjustment": 6,
       "trades": 2,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 7,
-      "protected": 211,
+      "protected": 269,
+      "note": "Fırsat radarı 🟡"
+    },
+    "ONDOUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 2,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "missed": 7,
+      "protected": 209,
       "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
       "confidence_adjustment": -4,
-      "trades": 8,
-      "wins": 0,
-      "losses": 1,
-      "win_rate": 0.0,
-      "missed": 0,
-      "protected": 165,
-      "note": "koruma baskın, temkinli 🔴"
-    },
-    "SUIUSDT": {
-      "confidence_adjustment": 6,
       "trades": 3,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
+      "missed": 0,
+      "protected": 164,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "SUIUSDT": {
+      "confidence_adjustment": 6,
+      "trades": 1,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
       "missed": 4,
-      "protected": 205,
+      "protected": 201,
       "note": "Fırsat radarı 🟡"
     },
     "XRPUSDT": {
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 110,
+      "protected": 108,
       "note": "koruma baskın, temkinli 🔴"
     }
   }
