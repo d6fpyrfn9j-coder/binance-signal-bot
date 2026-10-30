@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-29T09:57:15.154270+00:00",
+  "generated_at": "2026-10-30T09:59:39.650714+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -26,8 +26,8 @@
     "avg_return_pct": -0.28813840413979946,
     "total_return_pct": -3.745799253817393,
     "max_loss_pct": -1.2227074235807847,
-    "missed": 15,
-    "protected": 1558
+    "missed": 16,
+    "protected": 1572
   },
   "symbols": {
     "BNBUSDT": {
@@ -37,7 +37,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 38,
+      "protected": 48,
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
@@ -47,7 +47,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 114,
+      "protected": 121,
       "note": "koruma baskın, temkinli 🔴"
     },
     "ETHUSDT": {
@@ -57,7 +57,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 118,
+      "protected": 120,
       "note": "koruma baskın, temkinli 🔴"
     },
     "FETUSDT": {
@@ -67,7 +67,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 2,
-      "protected": 242,
+      "protected": 237,
       "note": "koruma baskın, temkinli 🔴"
     },
     "LINKUSDT": {
@@ -77,7 +77,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 131,
+      "protected": 128,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
@@ -96,8 +96,8 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 1,
-      "protected": 206,
+      "missed": 2,
+      "protected": 203,
       "note": "koruma baskın, temkinli 🔴"
     },
     "SOLUSDT": {
@@ -117,7 +117,7 @@
       "losses": 1,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 185,
+      "protected": 189,
       "note": "Fırsat radarı 🟡"
     },
     "XRPUSDT": {
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 102,
+      "protected": 104,
       "note": "koruma baskın, temkinli 🔴"
     }
   }
