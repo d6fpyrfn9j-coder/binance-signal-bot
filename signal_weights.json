@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-05T10:54:50.619670+00:00",
+  "generated_at": "2026-11-06T10:51:06.303671+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -27,7 +27,7 @@
     "total_return_pct": -8.298008097852328,
     "max_loss_pct": -1.2528132033008204,
     "missed": 19,
-    "protected": 1512
+    "protected": 1527
   },
   "symbols": {
     "BNBUSDT": {
@@ -37,7 +37,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 50,
+      "protected": 53,
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
@@ -47,7 +47,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 125,
+      "protected": 126,
       "note": "Fırsat radarı 🟡"
     },
     "ETHUSDT": {
@@ -57,7 +57,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 117,
+      "protected": 122,
       "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
@@ -67,7 +67,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 228,
+      "protected": 226,
       "note": "koruma baskın, temkinli 🔴"
     },
     "LINKUSDT": {
@@ -77,7 +77,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 138,
+      "protected": 139,
       "note": "koruma baskın, temkinli 🔴"
     },
     "NEARUSDT": {
@@ -87,7 +87,7 @@
       "losses": 2,
       "win_rate": 0.0,
       "missed": 7,
-      "protected": 253,
+      "protected": 255,
       "note": "Fırsat radarı 🟡"
     },
     "ONDOUSDT": {
@@ -97,7 +97,7 @@
       "losses": 1,
       "win_rate": 0.0,
       "missed": 3,
-      "protected": 201,
+      "protected": 199,
       "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
@@ -107,7 +107,7 @@
       "losses": 3,
       "win_rate": 0.0,
       "missed": 1,
-      "protected": 158,
+      "protected": 160,
       "note": "koruma baskın, temkinli 🔴"
     },
     "SUIUSDT": {
@@ -127,7 +127,7 @@
       "losses": 0,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 83,
+      "protected": 88,
       "note": "koruma baskın, temkinli 🔴"
     }
   }
