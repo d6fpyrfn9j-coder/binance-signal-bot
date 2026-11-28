@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-27T12:17:39.774231+00:00",
+  "generated_at": "2026-11-28T11:43:27.152632+00:00",
   "days": 30,
   "sample_every_15m": 8,
   "symbols_tested": [
@@ -19,46 +19,46 @@
     "min_entry_rr": 2.0
   },
   "metrics": {
-    "trades": 8,
+    "trades": 9,
     "wins": 0,
-    "losses": 0,
+    "losses": 3,
     "win_rate": 0.0,
-    "avg_return_pct": 0.37597055401990337,
-    "total_return_pct": 2.25582332411942,
-    "max_loss_pct": -0.46515886025180797,
-    "missed": 21,
-    "protected": 1851
+    "avg_return_pct": -0.5262951732866786,
+    "total_return_pct": -3.6840662130067505,
+    "max_loss_pct": -1.0936992518526234,
+    "missed": 19,
+    "protected": 1890
   },
   "symbols": {
     "BNBUSDT": {
       "confidence_adjustment": -4,
-      "trades": 1,
+      "trades": 2,
       "wins": 0,
-      "losses": 0,
+      "losses": 1,
       "win_rate": 0.0,
       "missed": 0,
-      "protected": 95,
+      "protected": 94,
       "note": "koruma baskın, temkinli 🔴"
     },
     "BTCUSDT": {
-      "confidence_adjustment": -4,
-      "trades": 1,
+      "confidence_adjustment": 6,
+      "trades": 2,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 2,
-      "protected": 225,
-      "note": "koruma baskın, temkinli 🔴"
+      "missed": 3,
+      "protected": 233,
+      "note": "Fırsat radarı 🟡"
     },
     "ETHUSDT": {
-      "confidence_adjustment": -4,
-      "trades": 1,
+      "confidence_adjustment": 6,
+      "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 2,
-      "protected": 188,
-      "note": "koruma baskın, temkinli 🔴"
+      "missed": 3,
+      "protected": 195,
+      "note": "Fırsat radarı 🟡"
     },
     "FETUSDT": {
       "confidence_adjustment": -4,
@@ -66,48 +66,48 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 1,
-      "protected": 223,
+      "missed": 2,
+      "protected": 219,
       "note": "koruma baskın, temkinli 🔴"
     },
     "LINKUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 2,
+      "wins": 0,
+      "losses": 2,
+      "win_rate": 0.0,
+      "missed": 2,
+      "protected": 158,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "NEARUSDT": {
+      "confidence_adjustment": -4,
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "missed": 1,
+      "protected": 252,
+      "note": "koruma baskın, temkinli 🔴"
+    },
+    "ONDOUSDT": {
       "confidence_adjustment": -4,
       "trades": 0,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
       "missed": 2,
-      "protected": 159,
+      "protected": 199,
       "note": "koruma baskın, temkinli 🔴"
-    },
-    "NEARUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 1,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": 0.0,
-      "missed": 3,
-      "protected": 245,
-      "note": "Fırsat radarı 🟡"
-    },
-    "ONDOUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 0,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": 0.0,
-      "missed": 3,
-      "protected": 198,
-      "note": "Fırsat radarı 🟡"
     },
     "SOLUSDT": {
       "confidence_adjustment": 6,
-      "trades": 1,
+      "trades": 2,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 4,
-      "protected": 214,
+      "missed": 5,
+      "protected": 217,
       "note": "Fırsat radarı 🟡"
     },
     "SUIUSDT": {
@@ -116,19 +116,19 @@
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 1,
-      "protected": 166,
+      "missed": 0,
+      "protected": 178,
       "note": "koruma baskın, temkinli 🔴"
     },
     "XRPUSDT": {
-      "confidence_adjustment": 6,
-      "trades": 3,
+      "confidence_adjustment": -4,
+      "trades": 1,
       "wins": 0,
       "losses": 0,
       "win_rate": 0.0,
-      "missed": 3,
-      "protected": 138,
-      "note": "Fırsat radarı 🟡"
+      "missed": 1,
+      "protected": 145,
+      "note": "koruma baskın, temkinli 🔴"
     }
   }
 }
